@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Buscador Bibliográfico y de Portadas</title>
+<meta name="description" content="Identificación de libros por ISBN o título, cotejo de ediciones y portadas, exportación a Excel.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,500;7..72,600&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+</head>
+<body>
+<header class="cabecera">
+  <div class="ficha">
+    <div class="perforacion" aria-hidden="true"></div>
+    <div>
+      <h1>Buscador Bibliográfico y de Portadas</h1>
+      <p>Identifique cada libro por ISBN o título, compare la edición encontrada con la solicitada y exporte el inventario a Excel.</p>
+    </div>
+  </div>
+  <div class="fuentes" aria-label="Fuentes activas"><span class="fuentes-titulo">Fuentes activas</span><div id="fuentesActivas"></div></div>
+</header>
+
+<main class="distribucion">
+  <aside class="panel">
+    <form class="tarjeta" id="formIndividual" autocomplete="off">
+      <h2>Búsqueda individual</h2>
+      <div class="segmentado" id="modo" role="radiogroup" aria-label="Tipo de búsqueda">
+        <button type="button" role="radio" data-modo="isbn10">ISBN-10</button>
+        <button type="button" role="radio" data-modo="isbn13">ISBN-13</button>
+        <button type="button" role="radio" data-modo="titulo">Título</button>
+      </div>
+      <label class="campo"><span id="lblPrincipal">ISBN-13</span>
+        <input id="campoPrincipal" type="text" spellcheck="false">
+      </label>
+      <p id="ayudaISBN" class="ayuda" aria-live="polite"></p>
+      <fieldset class="secundarios">
+        <legend id="leyendaSec">Datos secundarios</legend>
+        <label class="campo" id="grupoTituloSec"><span>Título</span><input id="campoTituloSec" type="text"></label>
+        <label class="campo"><span>Autor</span><input id="campoAutor" type="text"></label>
+        <div class="dos">
+          <label class="campo"><span>Editorial</span><input id="campoEditorial" type="text"></label>
+          <label class="campo"><span>Año</span><input id="campoAnio" type="text" inputmode="numeric" maxlength="4"></label>
+        </div>
+      </fieldset>
+      <div class="acciones">
+        <button type="submit" class="primario" id="btnBuscar">Buscar</button>
+        <button type="button" class="secundario" id="btnLimpiar">Limpiar</button>
+      </div>
+    </form>
+
+    <section class="tarjeta" id="panelLote">
+      <h2>Carga masiva</h2>
+      <label class="campo"><span>Pegue una lista (un libro por línea)</span>
+        <textarea id="areaLote" rows="6" spellcheck="false" placeholder="9786070123456&#10;0140328726&#10;El llano en llamas | Juan Rulfo | FCE | 1953&#10;También puede pegar columnas copiadas de Excel con encabezados"></textarea>
+      </label>
+      <button type="button" class="secundario ancho" id="btnLote">Procesar lista</button>
+      <div class="zona-archivo" id="zonaArchivo">
+        <input type="file" id="archivoLote" accept=".xlsx,.csv,.txt">
+        <label for="archivoLote"><strong>Importar Excel o CSV</strong><span>Arrastre el archivo aquí o haga clic para elegirlo</span></label>
+      </div>
+      <button type="button" class="enlace" id="btnPlantilla">Descargar plantilla de Excel</button>
+      <p id="infoLote" class="ayuda" aria-live="polite"></p>
+    </section>
+
+    <details class="tarjeta configuracion">
+      <summary>Configuración</summary>
+      <fieldset><legend>Fuentes</legend>
+        <label class="casilla"><input type="checkbox" id="cfgOL"> Open Library</label>
+        <label class="casilla"><input type="checkbox" id="cfgGB"> Google Books</label>
+        <label class="campo"><span>Clave de API de Google Books (opcional)</span>
+          <input id="cfgKey" type="password" placeholder="Solo se guarda mientras la página esté abierta"></label>
+      </fieldset>
+      <fieldset><legend>Pesos del motor de coincidencia</legend>
+        <div class="pesos">
+          <label>ISBN <input id="peso_isbn" type="number" min="0" max="100"></label>
+          <label>Título <input id="peso_titulo" type="number" min="0" max="100"></label>
+          <label>Autor <input id="peso_autor" type="number" min="0" max="100"></label>
+          <label>Editorial <input id="peso_editorial" type="number" min="0" max="100"></label>
+          <label>Año <input id="peso_anio" type="number" min="0" max="100"></label>
+        </div>
+      </fieldset>
+      <label class="campo"><span>Consultas simultáneas en lote (1 a 6)</span><input id="cfgConc" type="number" min="1" max="6"></label>
+      <div class="acciones">
+        <button type="button" class="primario" id="btnAplicarCfg">Aplicar y recalcular</button>
+        <button type="button" class="secundario" id="btnCache">Vaciar caché</button>
+      </div>
+    </details>
+  </aside>
+
+  <section class="resultados" aria-label="Resultados">
+    <div class="progreso" id="progreso" hidden>
+      <div class="progreso-texto"><span id="txtProgreso" aria-live="polite"></span>
+        <span class="progreso-botones"><button type="button" class="mini" id="btnPausa">Pausar</button><button type="button" class="mini" id="btnCancelar">Cancelar</button></span>
+      </div>
+      <div class="progreso-pista"><span id="barraProgreso"></span></div>
+    </div>
+
+    <div class="contadores" id="contadores"></div>
+
+    <div class="herramientas">
+      <div class="filtros" id="filtros" role="group" aria-label="Filtrar por estado"></div>
+      <div class="herramientas-derecha">
+        <label>Ordenar
+          <select id="ordenTabla">
+            <option value="num">Orden de captura</option>
+            <option value="conf-desc">Mayor confianza</option>
+            <option value="conf-asc">Menor confianza</option>
+            <option value="estado">Estado</option>
+            <option value="titulo">Título solicitado</option>
+          </select>
+        </label>
+        <button type="button" class="primario" id="btnExportar" disabled>Exportar a Excel</button>
+        <button type="button" class="secundario" id="btnVaciar">Vaciar tabla</button>
+      </div>
+    </div>
+
+    <div class="leyenda" aria-hidden="true">
+      <span class="coincide">Coincide</span><span class="parcial">Parcial</span><span class="difiere">Difiere del dato solicitado</span>
+    </div>
+
+    <div class="tabla-envoltura">
+      <table class="tabla">
+        <thead><tr>
+          <th>Estado</th><th>Portada</th><th>Título</th><th>Autor</th><th>Editorial</th>
+          <th>ISBN-10</th><th>ISBN-13</th><th>Año</th><th>Fuente</th><th>Confianza</th>
+          <th>URL de fuente</th><th>URL de portada</th><th>Observaciones</th>
+        </tr></thead>
+        <tbody id="cuerpo"></tbody>
+      </table>
+      <p class="vacio" id="vacio"></p>
+    </div>
+  </section>
+</main>
+
+<div class="modal" id="modal" hidden role="dialog" aria-modal="true" aria-labelledby="modalTitulo">
+  <div class="modal-caja">
+    <button type="button" class="modal-cerrar" id="modalCerrar" aria-label="Cerrar">×</button>
+    <img id="modalImg" alt="Portada ampliada" referrerpolicy="no-referrer">
+    <div><h3 id="modalTitulo"></h3><p id="modalPie"></p></div>
+  </div>
+</div>
+<div class="aviso" id="aviso" role="status" aria-live="polite"></div>
+
+<!-- Módulos (orden de carga = orden de dependencias) -->
+<script src="js/config.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/isbn.js"></script>
+<script src="js/sources/registry.js"></script>
+<script src="js/sources/openlibrary.js"></script>
+<script src="js/sources/googlebooks.js"></script>
+<script src="js/matcher.js"></script>
+<script src="js/covers.js"></script>
+<script src="js/search.js"></script>
+<script src="js/results.js"></script>
+<script src="js/excel.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

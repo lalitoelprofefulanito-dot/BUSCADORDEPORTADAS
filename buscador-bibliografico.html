@@ -1,0 +1,2165 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Buscador Bibliográfico y de Portadas</title>
+<meta name="description" content="Identificación de libros por ISBN o título, cotejo de ediciones y portadas, exportación a Excel.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,500;7..72,600&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* =====================================================================
+   css/styles.css — Identidad: ficha catalográfica de biblioteca
+   ===================================================================== */
+:root {
+  --fondo: #e8edf2;
+  --papel: #ffffff;
+  --tinta: #1b2d4a;
+  --tenue: #5a6679;
+  --linea: #d5dce5;
+  --linea-suave: #e7ebf0;
+  --rojo-ficha: #b3262e;
+  --accion: #1b2d4a;
+  --accion-hover: #2a4470;
+  --foco: #2f6fd6;
+
+  --ok: #1d7044;   --ok-f: #e0f2e7;
+  --med: #8a5a00;  --med-f: #fbf0d9;
+  --mal: #a3242b;  --mal-f: #f9e1e2;
+
+  --e-confirmado: #1d7044; --e-confirmado-f: #dcf0e3;
+  --e-probable: #1d5aa0;   --e-probable-f: #dde9f8;
+  --e-diferente: #95560a;  --e-diferente-f: #fbecd3;
+  --e-revision: #6d3a93;   --e-revision-f: #eee3f7;
+  --e-noenc: #a3242b;      --e-noenc-f: #f7e0e0;
+  --e-pendiente: #5a6679;  --e-pendiente-f: #eceff3;
+
+  --serif: 'Literata', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  --sans: 'Public Sans', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --radio: 6px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fondo: #121822; --papel: #1b2330; --tinta: #e6ecf5; --tenue: #9aa6b8;
+    --linea: #2e3a4b; --linea-suave: #253041; --accion: #d9e4f5; --accion-hover: #ffffff; --foco: #7fb0ff;
+    --ok: #7fd3a1; --ok-f: #183a28; --med: #f0c46b; --med-f: #3a2e14; --mal: #f19aa0; --mal-f: #43201f;
+    --e-confirmado: #7fd3a1; --e-confirmado-f: #183a28; --e-probable: #8fbcf5; --e-probable-f: #1a2d47;
+    --e-diferente: #f0c46b; --e-diferente-f: #3a2e14; --e-revision: #c9a3eb; --e-revision-f: #33224a;
+    --e-noenc: #f19aa0; --e-noenc-f: #43201f; --e-pendiente: #9aa6b8; --e-pendiente-f: #253041;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--fondo); color: var(--tinta); font: 400 14px/1.45 var(--sans); -webkit-font-smoothing: antialiased; }
+button, input, select, textarea { font: inherit; color: inherit; }
+a { color: var(--e-probable); }
+:focus-visible { outline: 2px solid var(--foco); outline-offset: 2px; }
+[hidden] { display: none !important; }
+
+/* ---------------------------- Cabecera ---------------------------- */
+.cabecera { display: flex; gap: 24px; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; padding: 22px 28px 18px; }
+.ficha {
+  display: flex; gap: 18px; align-items: center; background: var(--papel);
+  border-top: 4px solid var(--rojo-ficha); border-radius: 2px; padding: 16px 26px 16px 18px;
+  box-shadow: 0 1px 0 var(--linea), 0 8px 24px -18px rgba(27,45,74,.5); max-width: 760px;
+  background-image: repeating-linear-gradient(to bottom, transparent 0 27px, var(--linea-suave) 27px 28px);
+  background-position: 0 14px;
+}
+.perforacion { width: 14px; height: 14px; border-radius: 50%; background: var(--fondo); box-shadow: inset 0 1px 2px rgba(0,0,0,.25); flex: none; }
+.ficha h1 { font: 600 26px/1.15 var(--serif); margin: 0 0 4px; letter-spacing: -.01em; }
+.ficha p { margin: 0; color: var(--tenue); max-width: 62ch; }
+.fuentes { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+.fuentes-titulo { font-size: 12px; color: var(--tenue); }
+#fuentesActivas { display: flex; gap: 6px; flex-wrap: wrap; }
+.fuente-chip { border: 1px solid var(--linea); background: var(--papel); padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.fuente-chip.inactiva { opacity: .45; text-decoration: line-through; }
+
+/* ---------------------------- Distribución ------------------------- */
+.distribucion { display: grid; grid-template-columns: 330px minmax(0, 1fr); gap: 20px; padding: 0 28px 40px; align-items: start; }
+.panel { display: flex; flex-direction: column; gap: 16px; position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow: auto; padding-bottom: 4px; }
+.tarjeta { background: var(--papel); border: 1px solid var(--linea); border-radius: var(--radio); padding: 16px; }
+.tarjeta h2 { font: 600 17px/1.25 var(--serif); margin: 0 0 12px; }
+
+/* ----------------------------- Formularios ------------------------- */
+.campo { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+.campo > span { font-size: 12.5px; font-weight: 600; color: var(--tenue); }
+input[type=text], input[type=password], input[type=number], textarea, select {
+  width: 100%; border: 1px solid var(--linea); background: var(--papel); border-radius: 4px; padding: 8px 10px;
+}
+textarea { resize: vertical; font-size: 13px; line-height: 1.5; }
+input:focus, textarea:focus, select:focus { border-color: var(--foco); outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--foco) 25%, transparent); }
+#campoPrincipal { font-size: 16px; font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+.dos { display: grid; grid-template-columns: 1fr 84px; gap: 8px; }
+fieldset { border: 0; border-top: 1px solid var(--linea-suave); padding: 10px 0 0; margin: 6px 0 0; min-width: 0; }
+legend { font-size: 12.5px; color: var(--tenue); padding: 0 6px 0 0; }
+.ayuda { font-size: 12.5px; color: var(--tenue); margin: -4px 0 8px; min-height: 1em; }
+.ayuda.ok { color: var(--ok); }
+.ayuda.error { color: var(--mal); }
+.casilla { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+.pesos { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 8px; }
+.pesos label { display: flex; flex-direction: column; font-size: 12px; color: var(--tenue); gap: 2px; }
+.configuracion summary { cursor: pointer; font: 600 15px var(--serif); }
+.configuracion[open] summary { margin-bottom: 10px; }
+
+.segmentado { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--linea); border-radius: 5px; padding: 3px; gap: 3px; margin-bottom: 12px; background: var(--fondo); }
+.segmentado button { border: 0; background: transparent; padding: 7px 4px; border-radius: 3px; cursor: pointer; font-weight: 600; font-size: 13px; color: var(--tenue); }
+.segmentado button.activo { background: var(--papel); color: var(--tinta); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+
+/* ------------------------------- Botones --------------------------- */
+.acciones { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.primario, .secundario { border-radius: 4px; padding: 8px 16px; cursor: pointer; font-weight: 600; border: 1px solid var(--accion); }
+.primario { background: var(--accion); color: var(--papel); }
+.primario:hover:not(:disabled) { background: var(--accion-hover); }
+.secundario { background: var(--papel); color: var(--accion); border-color: var(--linea); }
+.secundario:hover:not(:disabled) { border-color: var(--accion); }
+button:disabled { opacity: .45; cursor: not-allowed; }
+.ancho { width: 100%; }
+.enlace { background: none; border: 0; padding: 4px 0; color: var(--e-probable); text-decoration: underline; cursor: pointer; font-size: 13px; }
+.mini { border: 1px solid var(--linea); background: var(--papel); border-radius: 4px; padding: 3px 8px; font-size: 12px; cursor: pointer; font-weight: 600; }
+.mini:hover { border-color: var(--accion); }
+
+.zona-archivo { position: relative; border: 1.5px dashed var(--linea); border-radius: 5px; margin: 12px 0 6px; transition: border-color .15s, background .15s; }
+.zona-archivo.encima { border-color: var(--foco); background: color-mix(in srgb, var(--foco) 8%, transparent); }
+.zona-archivo input { position: absolute; opacity: 0; inset: 0; width: 100%; cursor: pointer; }
+.zona-archivo label { display: flex; flex-direction: column; gap: 2px; padding: 14px; text-align: center; font-size: 13px; }
+.zona-archivo label span { color: var(--tenue); font-size: 12px; }
+.zona-archivo:focus-within { outline: 2px solid var(--foco); outline-offset: 2px; }
+#panelLote.ocupado #btnLote, #panelLote.ocupado .zona-archivo { opacity: .5; pointer-events: none; }
+
+/* ------------------------------ Resultados ------------------------- */
+.resultados { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.progreso { background: var(--papel); border: 1px solid var(--linea); border-radius: var(--radio); padding: 10px 14px; }
+.progreso-texto { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-weight: 600; font-variant-numeric: tabular-nums; margin-bottom: 8px; }
+.progreso-botones { display: flex; gap: 6px; }
+.progreso-pista { height: 6px; background: var(--linea-suave); border-radius: 3px; overflow: hidden; }
+.progreso-pista span { display: block; height: 100%; width: 0; background: var(--tinta); transition: width .3s ease; }
+
+.contadores { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+.contador { background: var(--papel); border: 1px solid var(--linea); border-radius: var(--radio); padding: 10px 12px; border-left-width: 4px; }
+.contador strong { display: block; font: 600 24px/1.1 var(--serif); font-variant-numeric: tabular-nums; }
+.contador span { font-size: 12px; color: var(--tenue); }
+.contador.e-confirmado { border-left-color: var(--e-confirmado); }
+.contador.e-probable { border-left-color: var(--e-probable); }
+.contador.e-diferente { border-left-color: var(--e-diferente); }
+.contador.e-revision { border-left-color: var(--e-revision); }
+.contador.e-noenc { border-left-color: var(--e-noenc); }
+
+.herramientas { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: center; }
+.filtros { display: flex; gap: 6px; flex-wrap: wrap; }
+.filtro { border: 1px solid var(--linea); background: var(--papel); border-radius: 999px; padding: 5px 12px; cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--tenue); }
+.filtro span { font-variant-numeric: tabular-nums; margin-left: 4px; opacity: .8; }
+.filtro.activo { background: var(--tinta); color: var(--papel); border-color: var(--tinta); }
+.herramientas-derecha { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.herramientas-derecha label { display: flex; gap: 6px; align-items: center; font-size: 12.5px; color: var(--tenue); }
+.herramientas-derecha select { width: auto; padding: 6px 8px; }
+
+.leyenda { display: flex; gap: 14px; font-size: 12px; color: var(--tenue); }
+.leyenda span::before { content: ''; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.leyenda .coincide::before { background: var(--ok-f); border: 1px solid var(--ok); }
+.leyenda .parcial::before { background: var(--med-f); border: 1px solid var(--med); }
+.leyenda .difiere::before { background: var(--mal-f); border: 1px solid var(--mal); }
+
+/* -------------------------------- Tabla ---------------------------- */
+.tabla-envoltura { background: var(--papel); border: 1px solid var(--linea); border-radius: var(--radio); overflow: auto; max-height: calc(100vh - 150px); }
+.tabla { border-collapse: separate; border-spacing: 0; width: 100%; min-width: 1500px; font-size: 13px; }
+.tabla > thead > tr > th { position: sticky; top: 0; z-index: 2; background: var(--tinta); color: var(--papel); text-align: left; font-weight: 600; padding: 9px 10px; font-size: 12.5px; white-space: nowrap; border-bottom: 2px solid var(--rojo-ficha); }
+.tabla > tbody > tr > td { padding: 9px 10px; border-bottom: 1px solid var(--linea-suave); vertical-align: top; }
+.tabla tr.fila:hover td:not(.coincide):not(.parcial):not(.difiere) { background: color-mix(in srgb, var(--fondo) 45%, var(--papel)); }
+.tabla tr.abierta td { border-bottom-color: transparent; }
+.tabla td.coincide { background: var(--ok-f); }
+.tabla td.parcial { background: var(--med-f); }
+.tabla td.difiere { background: var(--mal-f); }
+.cod { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.nd { color: var(--tenue); }
+.solicitado { font-size: 11.5px; color: var(--mal); margin-top: 3px; font-style: italic; white-space: normal; }
+td.parcial .solicitado { color: var(--med); }
+.titulo-libro { font: 500 14px/1.35 var(--serif); }
+.c-titulo { min-width: 220px; }
+.c-estado { width: 150px; }
+.c-portada { width: 72px; }
+.c-url { max-width: 120px; word-break: break-all; }
+.c-obs { min-width: 280px; }
+.c-obs ul { margin: 0; padding-left: 16px; }
+.c-obs li { margin-bottom: 2px; }
+.num { font-size: 11.5px; color: var(--tenue); margin-top: 4px; }
+.botones-fila { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+
+.insignia { display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 7px; border-radius: 3px; line-height: 1.2; letter-spacing: .01em; }
+.insignia.e-confirmado { background: var(--e-confirmado-f); color: var(--e-confirmado); }
+.insignia.e-probable { background: var(--e-probable-f); color: var(--e-probable); }
+.insignia.e-diferente { background: var(--e-diferente-f); color: var(--e-diferente); }
+.insignia.e-revision { background: var(--e-revision-f); color: var(--e-revision); }
+.insignia.e-noenc { background: var(--e-noenc-f); color: var(--e-noenc); }
+.insignia.e-pendiente, .insignia.e-procesando { background: var(--e-pendiente-f); color: var(--e-pendiente); }
+.insignia.e-procesando { animation: latido 1.2s ease-in-out infinite; }
+@keyframes latido { 50% { opacity: .45; } }
+.sello-manual { display: block; font-size: 11px; color: var(--e-confirmado); font-weight: 600; margin-top: 3px; }
+
+.miniatura { border: 0; padding: 0; background: none; cursor: zoom-in; display: block; }
+.miniatura img, .sin-portada { width: 48px; height: 70px; border-radius: 2px; }
+.miniatura img { object-fit: cover; box-shadow: 0 1px 3px rgba(0,0,0,.25), 2px 0 0 -1px var(--linea) inset; display: block; }
+.sin-portada { display: flex; align-items: center; justify-content: center; text-align: center; font-size: 10px; color: var(--tenue); border: 1px dashed var(--linea); padding: 2px; }
+
+.confianza { display: flex; align-items: center; gap: 6px; min-width: 92px; }
+.confianza .pista { flex: 1; height: 5px; background: var(--linea-suave); border-radius: 3px; overflow: hidden; }
+.confianza .pista span { display: block; height: 100%; }
+.confianza.alta .pista span { background: var(--ok); }
+.confianza.media .pista span { background: var(--med); }
+.confianza.baja .pista span { background: var(--mal); }
+.confianza b { font-variant-numeric: tabular-nums; font-size: 12.5px; min-width: 34px; text-align: right; }
+
+.vacio { text-align: center; color: var(--tenue); padding: 48px 20px; margin: 0; max-width: 60ch; margin-inline: auto; }
+
+/* ------------------------------- Detalle --------------------------- */
+.tabla tr.detalle > td { background: var(--fondo); padding: 0; border-bottom: 1px solid var(--linea); }
+.detalle-caja { padding: 16px 18px 20px; display: flex; flex-direction: column; gap: 14px; position: sticky; left: 0; max-width: min(1100px, calc(100vw - 420px)); }
+.detalle-caja h3 { font: 600 15px var(--serif); margin: 0; }
+.detalle-cabecera, .candidatos-cabecera { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.detalle-acciones { display: flex; gap: 8px; flex-wrap: wrap; }
+.candidatos-cabecera label { font-size: 12.5px; color: var(--tenue); display: flex; gap: 6px; align-items: center; }
+.candidatos-cabecera select { width: auto; padding: 4px 8px; }
+.comparacion { border-collapse: collapse; background: var(--papel); border: 1px solid var(--linea); width: 100%; }
+.comparacion th, .comparacion td { padding: 7px 10px; border-bottom: 1px solid var(--linea-suave); text-align: left; font-size: 13px; }
+.comparacion thead th { font-size: 12px; color: var(--tenue); font-weight: 600; }
+.comparacion tbody th { width: 90px; }
+.comparacion tr.coincide td.valor { color: var(--ok); font-weight: 700; }
+.comparacion tr.parcial td.valor { color: var(--med); font-weight: 700; }
+.comparacion tr.difiere td.valor { color: var(--mal); font-weight: 700; }
+.comparacion tr.difiere td:nth-child(3) { background: var(--mal-f); }
+.comparacion tr.parcial td:nth-child(3) { background: var(--med-f); }
+
+.lista-candidatos { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 8px; }
+.candidato { display: grid; grid-template-columns: 52px 1fr auto; gap: 10px; background: var(--papel); border: 1px solid var(--linea); border-radius: 4px; padding: 10px; }
+.candidato.elegido { border-color: var(--tinta); box-shadow: inset 3px 0 0 var(--rojo-ficha); }
+.cand-portada img, .cand-portada span { width: 52px; height: 76px; object-fit: cover; border-radius: 2px; display: flex; align-items: center; justify-content: center; font-size: 10px; color: var(--tenue); text-align: center; border: 1px dashed var(--linea); }
+.cand-portada img { border: 0; box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+.cand-datos h4 { font: 500 13.5px/1.3 var(--serif); margin: 0 0 3px; }
+.cand-datos p { margin: 0 0 2px; font-size: 12px; }
+.cand-fuente { color: var(--tenue); }
+.cand-accion { display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; gap: 6px; }
+.marca-elegido { font-size: 11.5px; font-weight: 700; color: var(--rojo-ficha); }
+
+.selector-portadas h3 { margin-bottom: 2px; }
+.rejilla-portadas { display: flex; gap: 8px; flex-wrap: wrap; }
+.opcion-portada { border: 1px solid var(--linea); background: var(--papel); border-radius: 4px; padding: 6px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; width: 92px; }
+.opcion-portada img { width: 56px; height: 82px; object-fit: cover; }
+.opcion-portada span { font-size: 10.5px; line-height: 1.25; color: var(--tenue); text-align: center; }
+.opcion-portada.actual { border-color: var(--tinta); box-shadow: 0 0 0 2px var(--tinta); }
+
+/* -------------------------------- Modal ---------------------------- */
+.modal { position: fixed; inset: 0; background: rgba(12,20,34,.72); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 20px; }
+.modal-caja { background: var(--papel); border-radius: var(--radio); padding: 20px; display: flex; gap: 20px; max-width: 760px; width: 100%; position: relative; align-items: flex-start; }
+.modal-caja img { max-height: 70vh; max-width: 55%; border-radius: 2px; box-shadow: 0 6px 20px rgba(0,0,0,.3); }
+.modal-caja h3 { font: 600 19px/1.3 var(--serif); margin: 0 0 8px; }
+.modal-caja p { color: var(--tenue); font-size: 13px; }
+.modal-cerrar { position: absolute; top: 8px; right: 10px; border: 0; background: none; font-size: 26px; cursor: pointer; color: var(--tenue); line-height: 1; }
+
+.aviso { position: fixed; bottom: 20px; left: 50%; transform: translate(-50%, 20px); background: var(--tinta); color: var(--papel); padding: 10px 18px; border-radius: 5px; opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; max-width: min(90vw, 640px); z-index: 60; font-size: 13.5px; }
+.aviso.visible { opacity: 1; transform: translate(-50%, 0); }
+.aviso.error { background: var(--rojo-ficha); color: #fff; }
+
+/* ------------------------------ Responsive ------------------------- */
+@media (max-width: 1280px) { .contadores { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 980px) {
+  .distribucion { grid-template-columns: 1fr; padding: 0 14px 30px; }
+  .panel { position: static; max-height: none; }
+  .cabecera { padding: 16px 14px; }
+  .fuentes { align-items: flex-start; }
+  .detalle-caja { max-width: calc(100vw - 40px); }
+}
+@media (max-width: 560px) {
+  .contadores { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ficha h1 { font-size: 21px; }
+  .modal-caja { flex-direction: column; }
+  .modal-caja img { max-width: 100%; }
+  .lista-candidatos { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+</head>
+<body>
+<header class="cabecera">
+  <div class="ficha">
+    <div class="perforacion" aria-hidden="true"></div>
+    <div>
+      <h1>Buscador Bibliográfico y de Portadas</h1>
+      <p>Identifique cada libro por ISBN o título, compare la edición encontrada con la solicitada y exporte el inventario a Excel.</p>
+    </div>
+  </div>
+  <div class="fuentes" aria-label="Fuentes activas"><span class="fuentes-titulo">Fuentes activas</span><div id="fuentesActivas"></div></div>
+</header>
+
+<main class="distribucion">
+  <aside class="panel">
+    <form class="tarjeta" id="formIndividual" autocomplete="off">
+      <h2>Búsqueda individual</h2>
+      <div class="segmentado" id="modo" role="radiogroup" aria-label="Tipo de búsqueda">
+        <button type="button" role="radio" data-modo="isbn10">ISBN-10</button>
+        <button type="button" role="radio" data-modo="isbn13">ISBN-13</button>
+        <button type="button" role="radio" data-modo="titulo">Título</button>
+      </div>
+      <label class="campo"><span id="lblPrincipal">ISBN-13</span>
+        <input id="campoPrincipal" type="text" spellcheck="false">
+      </label>
+      <p id="ayudaISBN" class="ayuda" aria-live="polite"></p>
+      <fieldset class="secundarios">
+        <legend id="leyendaSec">Datos secundarios</legend>
+        <label class="campo" id="grupoTituloSec"><span>Título</span><input id="campoTituloSec" type="text"></label>
+        <label class="campo"><span>Autor</span><input id="campoAutor" type="text"></label>
+        <div class="dos">
+          <label class="campo"><span>Editorial</span><input id="campoEditorial" type="text"></label>
+          <label class="campo"><span>Año</span><input id="campoAnio" type="text" inputmode="numeric" maxlength="4"></label>
+        </div>
+      </fieldset>
+      <div class="acciones">
+        <button type="submit" class="primario" id="btnBuscar">Buscar</button>
+        <button type="button" class="secundario" id="btnLimpiar">Limpiar</button>
+      </div>
+    </form>
+
+    <section class="tarjeta" id="panelLote">
+      <h2>Carga masiva</h2>
+      <label class="campo"><span>Pegue una lista (un libro por línea)</span>
+        <textarea id="areaLote" rows="6" spellcheck="false" placeholder="9786070123456&#10;0140328726&#10;El llano en llamas | Juan Rulfo | FCE | 1953&#10;También puede pegar columnas copiadas de Excel con encabezados"></textarea>
+      </label>
+      <button type="button" class="secundario ancho" id="btnLote">Procesar lista</button>
+      <div class="zona-archivo" id="zonaArchivo">
+        <input type="file" id="archivoLote" accept=".xlsx,.csv,.txt">
+        <label for="archivoLote"><strong>Importar Excel o CSV</strong><span>Arrastre el archivo aquí o haga clic para elegirlo</span></label>
+      </div>
+      <button type="button" class="enlace" id="btnPlantilla">Descargar plantilla de Excel</button>
+      <p id="infoLote" class="ayuda" aria-live="polite"></p>
+    </section>
+
+    <details class="tarjeta configuracion">
+      <summary>Configuración</summary>
+      <fieldset><legend>Fuentes</legend>
+        <label class="casilla"><input type="checkbox" id="cfgOL"> Open Library</label>
+        <label class="casilla"><input type="checkbox" id="cfgGB"> Google Books</label>
+        <label class="campo"><span>Clave de API de Google Books (opcional)</span>
+          <input id="cfgKey" type="password" placeholder="Solo se guarda mientras la página esté abierta"></label>
+      </fieldset>
+      <fieldset><legend>Pesos del motor de coincidencia</legend>
+        <div class="pesos">
+          <label>ISBN <input id="peso_isbn" type="number" min="0" max="100"></label>
+          <label>Título <input id="peso_titulo" type="number" min="0" max="100"></label>
+          <label>Autor <input id="peso_autor" type="number" min="0" max="100"></label>
+          <label>Editorial <input id="peso_editorial" type="number" min="0" max="100"></label>
+          <label>Año <input id="peso_anio" type="number" min="0" max="100"></label>
+        </div>
+      </fieldset>
+      <label class="campo"><span>Consultas simultáneas en lote (1 a 6)</span><input id="cfgConc" type="number" min="1" max="6"></label>
+      <div class="acciones">
+        <button type="button" class="primario" id="btnAplicarCfg">Aplicar y recalcular</button>
+        <button type="button" class="secundario" id="btnCache">Vaciar caché</button>
+      </div>
+    </details>
+  </aside>
+
+  <section class="resultados" aria-label="Resultados">
+    <div class="progreso" id="progreso" hidden>
+      <div class="progreso-texto"><span id="txtProgreso" aria-live="polite"></span>
+        <span class="progreso-botones"><button type="button" class="mini" id="btnPausa">Pausar</button><button type="button" class="mini" id="btnCancelar">Cancelar</button></span>
+      </div>
+      <div class="progreso-pista"><span id="barraProgreso"></span></div>
+    </div>
+
+    <div class="contadores" id="contadores"></div>
+
+    <div class="herramientas">
+      <div class="filtros" id="filtros" role="group" aria-label="Filtrar por estado"></div>
+      <div class="herramientas-derecha">
+        <label>Ordenar
+          <select id="ordenTabla">
+            <option value="num">Orden de captura</option>
+            <option value="conf-desc">Mayor confianza</option>
+            <option value="conf-asc">Menor confianza</option>
+            <option value="estado">Estado</option>
+            <option value="titulo">Título solicitado</option>
+          </select>
+        </label>
+        <button type="button" class="primario" id="btnExportar" disabled>Exportar a Excel</button>
+        <button type="button" class="secundario" id="btnVaciar">Vaciar tabla</button>
+      </div>
+    </div>
+
+    <div class="leyenda" aria-hidden="true">
+      <span class="coincide">Coincide</span><span class="parcial">Parcial</span><span class="difiere">Difiere del dato solicitado</span>
+    </div>
+
+    <div class="tabla-envoltura">
+      <table class="tabla">
+        <thead><tr>
+          <th>Estado</th><th>Portada</th><th>Título</th><th>Autor</th><th>Editorial</th>
+          <th>ISBN-10</th><th>ISBN-13</th><th>Año</th><th>Fuente</th><th>Confianza</th>
+          <th>URL de fuente</th><th>URL de portada</th><th>Observaciones</th>
+        </tr></thead>
+        <tbody id="cuerpo"></tbody>
+      </table>
+      <p class="vacio" id="vacio"></p>
+    </div>
+  </section>
+</main>
+
+<div class="modal" id="modal" hidden role="dialog" aria-modal="true" aria-labelledby="modalTitulo">
+  <div class="modal-caja">
+    <button type="button" class="modal-cerrar" id="modalCerrar" aria-label="Cerrar">×</button>
+    <img id="modalImg" alt="Portada ampliada" referrerpolicy="no-referrer">
+    <div><h3 id="modalTitulo"></h3><p id="modalPie"></p></div>
+  </div>
+</div>
+<div class="aviso" id="aviso" role="status" aria-live="polite"></div>
+
+<!-- Módulos (orden de carga = orden de dependencias) -->
+<script>
+/* ==================== js/config.js ==================== */
+/* =====================================================================
+   js/config.js — Configuración central (pesos, umbrales, red, fuentes)
+   Toda la ponderación del motor de coincidencia se ajusta aquí.
+   ===================================================================== */
+window.BB = window.BB || {};
+
+BB.CONFIG = {
+  // Pesos del motor de coincidencia (se normalizan sobre los campos solicitados)
+  pesos: { isbn: 35, titulo: 25, autor: 20, editorial: 12, anio: 8 },
+
+  // Umbrales de clasificación
+  umbrales: {
+    confirmado: 85,        // puntuación mínima para CONFIRMADO
+    probable: 60,          // puntuación mínima para COINCIDENCIA PROBABLE
+    minimo: 35,            // por debajo: NO ENCONTRADO
+    margenAmbiguedad: 6,   // diferencia de puntos que vuelve ambiguas dos ediciones
+    tituloObra: 0.75,      // similitud de título para considerar la misma obra
+    autorObra: 0.6,        // similitud de autor para considerar la misma obra
+    editorialEdicion: 0.75 // similitud de editorial para considerar la misma edición
+  },
+
+  // Control de red para procesamiento masivo
+  red: { concurrencia: 3, pausaMs: 300, timeoutMs: 12000, reintentos: 2, backoffMs: 1500 },
+
+  // Fuentes bibliográficas
+  fuentes: {
+    openLibrary: { activa: true, maxObras: 3, maxEdicionesPorObra: 40 },
+    googleBooks: { activa: true, maxResultados: 20, apiKey: '' } // clave opcional, solo en memoria
+  },
+
+  // Portadas
+  portadas: { timeoutMs: 8000, ladoMinimo: 20, verificarPrimeros: 6 },
+
+  // Exportación
+  excel: { anchoImagen: 60, altoImagen: 88, altoFila: 72, concurrenciaImagenes: 4 }
+};
+
+BB.ESTADOS = {
+  CONFIRMADO: 'CONFIRMADO',
+  PROBABLE: 'COINCIDENCIA PROBABLE',
+  DIFERENTE: 'EDICIÓN DIFERENTE',
+  NO_ENCONTRADO: 'NO ENCONTRADO',
+  REVISION: 'REVISIÓN MANUAL',
+  PENDIENTE: 'PENDIENTE',
+  PROCESANDO: 'PROCESANDO'
+};
+</script>
+<script>
+/* ==================== js/utils.js ==================== */
+/* =====================================================================
+   js/utils.js — Utilidades generales: texto, red, fechas, escape HTML
+   ===================================================================== */
+BB.Utils = (() => {
+  const VACIAS = new Set(['el','la','los','las','lo','un','una','unos','unas','de','del','y','e','o','u',
+    'en','a','al','con','por','para','the','an','of','and','le','les','des','du','et','il','di']);
+
+  /** Devuelve '' para null, undefined, NaN, "undefined", "null". Nunca muestra valores técnicos. */
+  function limpio(v) {
+    if (v === null || v === undefined) return '';
+    if (typeof v === 'number' && !isFinite(v)) return '';
+    const s = String(v).trim();
+    return /^(undefined|null|nan)$/i.test(s) ? '' : s;
+  }
+
+  /** Normaliza para comparar: minúsculas, sin acentos, sin puntuación, espacios simples. */
+  function normalizarTexto(s) {
+    return limpio(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+      .replace(/&/g, ' y ').replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+  }
+
+  /** Tokens normalizados, opcionalmente sin palabras vacías. */
+  function tokens(s, sinVacias = true) {
+    return normalizarTexto(s).split(' ').filter(t => t && (!sinVacias || !VACIAS.has(t)));
+  }
+
+  function extraerAnio(s) {
+    const m = limpio(s).match(/\b(1[4-9]\d{2}|20\d{2})\b/);
+    return m ? m[1] : '';
+  }
+
+  const esperar = ms => new Promise(r => setTimeout(r, ms));
+
+  function esc(s) {
+    return limpio(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  let contador = 0;
+  const uid = (p = 'id') => `${p}${Date.now().toString(36)}${(contador++).toString(36)}`;
+
+  const fechaISO = () => new Date().toISOString();
+  function fechaLegible(iso) {
+    const d = iso ? new Date(iso) : new Date();
+    return isNaN(d) ? '' : d.toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' });
+  }
+
+  /**
+   * fetch con tiempo límite, reintentos y retroceso ante 429/5xx/red.
+   * Devuelve JSON, o null si HTTP 404. Lanza Error con .code en otros casos.
+   */
+  async function fetchJSON(url, opciones = {}) {
+    const cfg = Object.assign({}, BB.CONFIG.red, opciones);
+    let intento = 0;
+    for (;;) {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), cfg.timeoutMs);
+      try {
+        const r = await fetch(url, { signal: ctrl.signal });
+        clearTimeout(t);
+        if (r.status === 404) return null;
+        if (r.status === 429 || r.status >= 500) {
+          const e = new Error(r.status === 429 ? 'Límite de solicitudes alcanzado (HTTP 429)' : `La fuente respondió con error (HTTP ${r.status})`);
+          e.code = r.status === 429 ? 'LIMITE' : 'HTTP'; e.reintentar = true; throw e;
+        }
+        if (!r.ok) { const e = new Error(`La fuente rechazó la consulta (HTTP ${r.status})`); e.code = 'HTTP'; throw e; }
+        return await r.json();
+      } catch (err) {
+        clearTimeout(t);
+        let e = err;
+        if (err.name === 'AbortError') { e = new Error('La fuente no respondió a tiempo'); e.code = 'TIEMPO'; e.reintentar = true; }
+        else if (!err.code) { e = new Error('Sin conexión con la fuente (red o CORS)'); e.code = 'RED'; e.reintentar = true; }
+        if (e.reintentar && intento < cfg.reintentos) {
+          intento++;
+          await esperar(cfg.backoffMs * intento * (e.code === 'LIMITE' ? 2 : 1));
+          continue;
+        }
+        throw e;
+      }
+    }
+  }
+
+  function descargar(blob, nombre) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = nombre; document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1500);
+  }
+
+  return { limpio, normalizarTexto, tokens, extraerAnio, esperar, esc, uid, fechaISO, fechaLegible, fetchJSON, descargar };
+})();
+</script>
+<script>
+/* ==================== js/isbn.js ==================== */
+/* =====================================================================
+   js/isbn.js — Normalización, validación y conversión de ISBN
+   ===================================================================== */
+BB.ISBN = (() => {
+  function normalizarISBN(s) {
+    return BB.Utils.limpio(s).toUpperCase()
+      .replace(/^ISBN(-1[03])?\s*:?\s*/, '')
+      .replace(/[\s\-\u2010-\u2015.]/g, '');
+  }
+
+  function validarISBN10(s) {
+    if (!/^\d{9}[\dX]$/.test(s)) return false;
+    let suma = 0;
+    for (let i = 0; i < 10; i++) suma += (s[i] === 'X' ? 10 : +s[i]) * (10 - i);
+    return suma % 11 === 0;
+  }
+
+  function validarISBN13(s) {
+    if (!/^\d{13}$/.test(s)) return false;
+    let suma = 0;
+    for (let i = 0; i < 13; i++) suma += (+s[i]) * (i % 2 ? 3 : 1);
+    return suma % 10 === 0;
+  }
+
+  function convertirISBN10a13(s) {
+    if (!validarISBN10(s)) return '';
+    const base = '978' + s.slice(0, 9);
+    let suma = 0;
+    for (let i = 0; i < 12; i++) suma += (+base[i]) * (i % 2 ? 3 : 1);
+    return base + ((10 - (suma % 10)) % 10);
+  }
+
+  /** Solo los ISBN-13 con prefijo 978 tienen equivalente ISBN-10. */
+  function convertirISBN13a10(s) {
+    if (!validarISBN13(s) || !s.startsWith('978')) return '';
+    const base = s.slice(3, 12);
+    let suma = 0;
+    for (let i = 0; i < 9; i++) suma += (+base[i]) * (10 - i);
+    const c = (11 - (suma % 11)) % 11;
+    return base + (c === 10 ? 'X' : String(c));
+  }
+
+  /** Análisis completo de una cadena: tipo, validez, equivalencias y mensaje de error legible. */
+  function analizar(raw) {
+    const normal = normalizarISBN(raw);
+    const r = { entrada: BB.Utils.limpio(raw), normal, tipo: '', valido: false, isbn10: '', isbn13: '', error: '' };
+    if (!normal) return r;
+    if (normal.length === 10) {
+      r.tipo = 'ISBN-10'; r.valido = validarISBN10(normal);
+      if (r.valido) { r.isbn10 = normal; r.isbn13 = convertirISBN10a13(normal); }
+      else r.error = /^\d{9}[\dX]$/.test(normal) ? 'ISBN-10 con dígito de control incorrecto' : 'ISBN-10 con caracteres no válidos';
+    } else if (normal.length === 13) {
+      r.tipo = 'ISBN-13'; r.valido = validarISBN13(normal);
+      if (r.valido) { r.isbn13 = normal; r.isbn10 = convertirISBN13a10(normal); }
+      else r.error = /^\d{13}$/.test(normal) ? 'ISBN-13 con dígito de control incorrecto' : 'ISBN-13 con caracteres no válidos';
+    } else {
+      r.error = `Longitud no válida para un ISBN (${normal.length} caracteres; se esperan 10 o 13)`;
+    }
+    return r;
+  }
+
+  /** ¿La cadena tiene forma de ISBN (aunque su dígito de control sea incorrecto)? */
+  function pareceISBN(s) {
+    const n = normalizarISBN(s);
+    return /^\d{9}[\dX]$/.test(n) || /^\d{13}$/.test(n);
+  }
+
+  return { normalizarISBN, validarISBN10, validarISBN13, convertirISBN10a13, convertirISBN13a10, analizar, pareceISBN };
+})();
+</script>
+<script>
+/* ==================== js/sources/registry.js ==================== */
+/* =====================================================================
+   js/sources/registry.js — Registro de adaptadores y modelo normalizado
+   MODELO:  OBRA   → título + autores
+            EDICIÓN → ISBN-10 + ISBN-13 + editorial + año + portada + fuente
+   Contrato de un adaptador:
+     { id, nombre, activa(): boolean,
+       buscarPorISBN(infoISBN)            → Promise<Candidato[]>,
+       buscarPorTitulo({titulo, autor, editorial, anio}) → Promise<Candidato[]> }
+   ===================================================================== */
+BB.Fuentes = (() => {
+  const registro = [];
+  const U = () => BB.Utils;
+
+  function registrar(adaptador) {
+    if (registro.some(a => a.id === adaptador.id)) return;
+    registro.push(adaptador);
+  }
+  const activas = () => registro.filter(a => a.activa());
+  const todas = () => registro.slice();
+  const porId = id => registro.find(a => a.id === id);
+
+  /** Construye el objeto bibliográfico normalizado que toda fuente debe devolver. */
+  function crearCandidato(d) {
+    const { limpio, extraerAnio, uid, fechaISO } = U();
+    const lista10 = [], lista13 = [];
+    [].concat(d.isbn13 || [], d.isbn10 || []).forEach(x => {
+      const a = BB.ISBN.analizar(x);
+      if (!a.valido) return;
+      if (a.isbn13 && !lista13.includes(a.isbn13)) lista13.push(a.isbn13);
+      if (a.isbn10 && !lista10.includes(a.isbn10)) lista10.push(a.isbn10);
+    });
+    const portadaUrl = limpio(d.portadaUrl);
+    const editorial = Array.isArray(d.editorial) ? d.editorial.map(limpio).filter(Boolean).join(' / ') : limpio(d.editorial);
+    return {
+      id: uid('c'),
+      fuente: d.fuente,
+      obra: {
+        titulo: limpio(d.titulo),
+        subtitulo: limpio(d.subtitulo),
+        autores: (d.autores || []).map(limpio).filter(Boolean),
+        idObra: limpio(d.idObra)
+      },
+      edicion: {
+        isbn10: lista10[0] || '',
+        isbn13: lista13[0] || '',
+        isbns13: lista13,              // todas las equivalencias ISBN-13 de esta edición
+        editorial,
+        anio: extraerAnio(d.anio),
+        idEdicion: limpio(d.idEdicion),
+        portadaUrl,
+        portadaNivel: portadaUrl ? (d.portadaNivel || 'edición') : '',   // 'edición' | 'obra' | 'volumen'
+        portadaEstado: portadaUrl ? 'sin verificar' : 'sin portada',       // 'verificada' | 'inaccesible'
+        portadaMotivo: ''
+      },
+      urlFuente: limpio(d.urlFuente),
+      fechaConsulta: fechaISO(),
+      ev: null
+    };
+  }
+
+  return { registrar, activas, todas, porId, crearCandidato };
+})();
+</script>
+<script>
+/* ==================== js/sources/openlibrary.js ==================== */
+/* =====================================================================
+   js/sources/openlibrary.js — Adaptador Open Library
+   ISBN:   /api/books?bibkeys=ISBN:…&jscmd=data  (registro de edición)
+   Título: /search.json (obras) → /works/{id}/editions.json (ediciones)
+   ===================================================================== */
+(() => {
+  const BASE = 'https://openlibrary.org';
+  const COVERS = 'https://covers.openlibrary.org/b';
+  const cfg = () => BB.CONFIG.fuentes.openLibrary;
+  const crear = d => BB.Fuentes.crearCandidato(Object.assign({ fuente: 'Open Library' }, d));
+  const portadaPorId = id => (id && id > 0 ? `${COVERS}/id/${id}-M.jpg` : '');
+  const portadaPorISBN = isbn => (isbn ? `${COVERS}/isbn/${isbn}-M.jpg?default=false` : '');
+
+  async function buscarPorISBN(info) {
+    const claves = [info.isbn13, info.isbn10].filter(Boolean);
+    if (!claves.length) return [];
+    const url = `${BASE}/api/books?bibkeys=${claves.map(k => 'ISBN:' + k).join(',')}&format=json&jscmd=data`;
+    const data = await BB.Utils.fetchJSON(url);
+    if (!data) return [];
+    const vistos = new Set(), salida = [];
+    Object.entries(data).forEach(([clave, b]) => {
+      if (!b || vistos.has(b.key)) return;
+      vistos.add(b.key);
+      const ids = b.identifiers || {};
+      const consultado = clave.replace('ISBN:', '');
+      const i13 = [].concat(ids.isbn_13 || []), i10 = [].concat(ids.isbn_10 || []);
+      // Open Library devolvió este registro para ese ISBN: el ISBN pertenece a la edición.
+      (consultado.length === 13 ? i13 : i10).push(consultado);
+      const portada = b.cover ? (b.cover.medium || b.cover.large || b.cover.small) : portadaPorISBN(info.isbn13 || info.isbn10);
+      salida.push(crear({
+        titulo: b.title, subtitulo: b.subtitle,
+        autores: (b.authors || []).map(a => a.name),
+        editorial: (b.publishers || []).map(p => p.name),
+        anio: b.publish_date, isbn10: i10, isbn13: i13,
+        portadaUrl: portada, portadaNivel: 'edición',
+        urlFuente: b.url || `${BASE}${b.key}`, idEdicion: b.key
+      }));
+    });
+    return salida;
+  }
+
+  async function buscarObras(titulo, autor) {
+    const p = new URLSearchParams({ title: titulo, limit: '8',
+      fields: 'key,title,subtitle,author_name,first_publish_year,cover_i,edition_count' });
+    if (autor) p.set('author', autor);
+    let data = await BB.Utils.fetchJSON(`${BASE}/search.json?${p}`);
+    let docs = (data && data.docs) || [];
+    if (!docs.length && autor) {           // reintento sin autor por si está escrito distinto
+      p.delete('author');
+      data = await BB.Utils.fetchJSON(`${BASE}/search.json?${p}`);
+      docs = (data && data.docs) || [];
+    }
+    return docs;
+  }
+
+  async function buscarPorTitulo({ titulo, autor }) {
+    if (!titulo) return [];
+    const obras = (await buscarObras(titulo, autor)).slice(0, cfg().maxObras);
+    const salida = [];
+    for (const w of obras) {
+      let ediciones = [];
+      try {
+        const e = await BB.Utils.fetchJSON(`${BASE}${w.key}/editions.json?limit=${cfg().maxEdicionesPorObra}`);
+        ediciones = (e && e.entries) || [];
+      } catch (_) { /* si falla, se conserva el registro a nivel de obra */ }
+
+      if (ediciones.length) {
+        ediciones.forEach(ed => {
+          const cov = (ed.covers || []).find(c => c > 0);
+          const isbnPortada = (ed.isbn_13 || [])[0] || (ed.isbn_10 || [])[0];
+          salida.push(crear({
+            titulo: ed.title || w.title, subtitulo: ed.subtitle,
+            autores: w.author_name, editorial: ed.publishers,
+            anio: ed.publish_date, isbn10: ed.isbn_10, isbn13: ed.isbn_13,
+            portadaUrl: cov ? portadaPorId(cov) : portadaPorISBN(isbnPortada),
+            portadaNivel: 'edición',
+            urlFuente: `${BASE}${ed.key}`, idObra: w.key, idEdicion: ed.key
+          }));
+        });
+      } else {
+        salida.push(crear({
+          titulo: w.title, subtitulo: w.subtitle, autores: w.author_name,
+          anio: w.first_publish_year, portadaUrl: portadaPorId(w.cover_i),
+          portadaNivel: 'obra', urlFuente: `${BASE}${w.key}`, idObra: w.key
+        }));
+      }
+    }
+    return salida;
+  }
+
+  BB.Fuentes.registrar({
+    id: 'openlibrary', nombre: 'Open Library',
+    activa: () => cfg().activa,
+    buscarPorISBN, buscarPorTitulo
+  });
+})();
+</script>
+<script>
+/* ==================== js/sources/googlebooks.js ==================== */
+/* =====================================================================
+   js/sources/googlebooks.js — Adaptador Google Books (API v1 pública)
+   La clave es opcional y la aporta el usuario; nunca se guarda en código.
+   ===================================================================== */
+(() => {
+  const BASE = 'https://www.googleapis.com/books/v1/volumes';
+  const cfg = () => BB.CONFIG.fuentes.googleBooks;
+
+  function url(q, max) {
+    let u = `${BASE}?q=${q}&maxResults=${max}&printType=books`;
+    if (cfg().apiKey) u += `&key=${encodeURIComponent(cfg().apiKey)}`;
+    return u;
+  }
+
+  function mapear(item) {
+    const v = item.volumeInfo || {};
+    const ids = v.industryIdentifiers || [];
+    const i10 = ids.filter(x => x.type === 'ISBN_10').map(x => x.identifier);
+    const i13 = ids.filter(x => x.type === 'ISBN_13').map(x => x.identifier);
+    let img = (v.imageLinks && (v.imageLinks.thumbnail || v.imageLinks.smallThumbnail)) || '';
+    img = img.replace(/^http:/, 'https:').replace(/&edge=curl/g, '');
+    return BB.Fuentes.crearCandidato({
+      fuente: 'Google Books',
+      titulo: v.title, subtitulo: v.subtitle, autores: v.authors,
+      editorial: v.publisher, anio: v.publishedDate, isbn10: i10, isbn13: i13,
+      portadaUrl: img, portadaNivel: (i10.length || i13.length) ? 'edición' : 'volumen',
+      urlFuente: v.infoLink || v.canonicalVolumeLink || `https://books.google.com/books?id=${item.id}`,
+      idEdicion: item.id
+    });
+  }
+
+  async function buscarPorISBN(info) {
+    let d = await BB.Utils.fetchJSON(url(`isbn:${info.isbn13 || info.isbn10}`, 10));
+    let items = (d && d.items) || [];
+    if (!items.length && info.isbn10 && info.isbn13) {
+      d = await BB.Utils.fetchJSON(url(`isbn:${info.isbn10}`, 10));
+      items = (d && d.items) || [];
+    }
+    return items.map(mapear);
+  }
+
+  async function buscarPorTitulo({ titulo, autor }) {
+    if (!titulo) return [];
+    const parte = (pref, s) => `${pref}:${encodeURIComponent(s)}`;
+    let q = parte('intitle', titulo);
+    if (autor) q += '+' + parte('inauthor', autor);
+    let d = await BB.Utils.fetchJSON(url(q, cfg().maxResultados));
+    let items = (d && d.items) || [];
+    if (!items.length && autor) {
+      d = await BB.Utils.fetchJSON(url(parte('intitle', titulo), cfg().maxResultados));
+      items = (d && d.items) || [];
+    }
+    return items.map(mapear);
+  }
+
+  BB.Fuentes.registrar({
+    id: 'googlebooks', nombre: 'Google Books',
+    activa: () => cfg().activa,
+    buscarPorISBN, buscarPorTitulo
+  });
+})();
+</script>
+<script>
+/* ==================== js/matcher.js ==================== */
+/* =====================================================================
+   js/matcher.js — Motor de coincidencia y clasificación
+   Cada campo produce una similitud 0–1; la confianza es el promedio
+   ponderado (BB.CONFIG.pesos) SOLO sobre los campos que el usuario aportó.
+   Si la fuente no informa un campo solicitado, ese campo cuenta como 0.
+   ===================================================================== */
+BB.Matcher = (() => {
+  const U = BB.Utils, E = BB.ESTADOS;
+
+  function bigramas(s) {
+    const t = s.replace(/ /g, ''), m = new Map();
+    for (let i = 0; i < t.length - 1; i++) { const b = t.slice(i, i + 2); m.set(b, (m.get(b) || 0) + 1); }
+    return m;
+  }
+  function diceBigramas(a, b) {
+    if (!a || !b) return 0;
+    if (a === b) return 1;
+    const A = bigramas(a), B = bigramas(b);
+    let inter = 0, total = 0;
+    A.forEach((v, k) => { total += v; if (B.has(k)) inter += Math.min(v, B.get(k)); });
+    B.forEach(v => { total += v; });
+    return total ? (2 * inter) / total : 0;
+  }
+
+  /** Similitud general de textos: máximo entre Dice de tokens, contención y bigramas. */
+  function simTexto(a, b) {
+    const ta = U.tokens(a), tb = U.tokens(b);
+    if (!ta.length || !tb.length) return 0;
+    const na = ta.join(' '), nb = tb.join(' ');
+    if (na === nb) return 1;
+    const sa = new Set(ta), sb = new Set(tb);
+    let inter = 0; sa.forEach(t => { if (sb.has(t)) inter++; });
+    const dice = (2 * inter) / (sa.size + sb.size);
+    const contencion = inter / Math.min(sa.size, sb.size);
+    return Math.min(1, Math.max(dice, contencion * 0.9, diceBigramas(na, nb) * 0.95));
+  }
+
+  function simTitulo(solicitado, cand) {
+    const completo = [cand.obra.titulo, cand.obra.subtitulo].filter(Boolean).join(' ');
+    return Math.max(simTexto(solicitado, cand.obra.titulo), simTexto(solicitado, completo));
+  }
+
+  /** Proporción de palabras del autor solicitado presentes en los autores de la fuente (tolera erratas). */
+  function simAutor(solicitado, autores) {
+    const req = U.tokens(solicitado).filter(t => t.length > 1);
+    const disp = U.tokens((autores || []).join(' ')).filter(t => t.length > 1);
+    if (!req.length || !disp.length) return 0;
+    let ok = 0;
+    req.forEach(t => { if (disp.some(d => d === t || diceBigramas(d, t) >= 0.85)) ok++; });
+    return ok / req.length;
+  }
+
+  const RUIDO_EDITORIAL = /\b(editorial|editora|editores|editor|ediciones|edicion|ed|eds|sa|s a|de|cv|c v|sl|s l|grupo|libros|publishing|publishers|press|inc|ltd|co|company)\b/g;
+  function limpiarEditorial(s) {
+    let n = U.normalizarTexto(s).replace(/secretaria de educacion publica/g, 'sep');
+    const limpia = n.replace(RUIDO_EDITORIAL, ' ').replace(/\s+/g, ' ').trim();
+    return limpia || n;
+  }
+  /** Siglas: «FCE» ↔ «Fondo de Cultura Económica», «UNAM», «SEP», etc. */
+  function iniciales(s) { return U.tokens(s).map(t => t[0]).join(''); }
+  function coincideSigla(a, b) {
+    const ta = U.normalizarTexto(a).replace(/ /g, ''), tb = U.normalizarTexto(b).replace(/ /g, '');
+    return (ta.length >= 2 && ta.length <= 6 && !/\d/.test(ta) && ta === iniciales(b)) ||
+           (tb.length >= 2 && tb.length <= 6 && !/\d/.test(tb) && tb === iniciales(a));
+  }
+  function simEditorial(a, b) {
+    const pa = limpiarEditorial(a), pb = limpiarEditorial(b);
+    if (!pa || !pb) return 0;
+    if (String(b).split('/').some(x => coincideSigla(pa, limpiarEditorial(x)))) return 1;
+    // Varias editoriales separadas por "/" en la fuente: se toma la mejor
+    return Math.max(...String(b).split('/').map(x => simTexto(pa, limpiarEditorial(x))), simTexto(pa, pb));
+  }
+
+  function simAnio(a, b) {
+    if (!a || !b) return 0;
+    const d = Math.abs(+a - +b);
+    return d === 0 ? 1 : d === 1 ? 0.6 : d <= 3 ? 0.3 : 0;
+  }
+
+  /** Evalúa un candidato frente a la solicitud. Devuelve {score, det}. */
+  function evaluar(req, cand) {
+    const P = BB.CONFIG.pesos, det = {};
+    if (req.isbn) det.isbn = cand.edicion.isbns13.includes(req.isbn.isbn13) ? 1 : 0;
+    if (req.titulo) det.titulo = cand.obra.titulo ? simTitulo(req.titulo, cand) : 0;
+    if (req.autor) det.autor = simAutor(req.autor, cand.obra.autores);
+    if (req.editorial) det.editorial = cand.edicion.editorial ? simEditorial(req.editorial, cand.edicion.editorial) : 0;
+    if (req.anio) det.anio = simAnio(req.anio, cand.edicion.anio);
+    let num = 0, den = 0;
+    Object.keys(det).forEach(k => { num += (P[k] || 0) * det[k]; den += (P[k] || 0); });
+    return { score: den ? Math.round((num / den) * 100) : 0, det };
+  }
+
+  /** Lista explícita de discrepancias: nunca se ocultan diferencias de ISBN, editorial o año. */
+  function discrepancias(req, cand) {
+    const obs = [], d = (cand.ev && cand.ev.det) || {}, ed = cand.edicion;
+    if ('isbn' in d && d.isbn === 0) {
+      obs.push(ed.isbn13 || ed.isbn10
+        ? `ISBN distinto: solicitado ${req.isbn.normal}, encontrado ${ed.isbn13 || ed.isbn10}`
+        : 'La fuente no informa ISBN para este resultado; no se puede confirmar la edición');
+    }
+    if ('titulo' in d && d.titulo < 0.85) obs.push(`Título con diferencias: solicitado «${req.titulo}»`);
+    if ('autor' in d && d.autor < 0.6) obs.push(cand.obra.autores.length ? `Autor distinto: solicitado «${req.autor}»` : 'La fuente no informa autor');
+    if ('editorial' in d && d.editorial < BB.CONFIG.umbrales.editorialEdicion) {
+      obs.push(ed.editorial ? `Editorial distinta: solicitada «${req.editorial}», encontrada «${ed.editorial}»` : 'La fuente no informa editorial');
+    }
+    if ('anio' in d && d.anio < 1) obs.push(ed.anio ? `Año distinto: solicitado ${req.anio}, encontrado ${ed.anio}` : 'La fuente no informa año de publicación');
+    return obs;
+  }
+
+  /** Clave de edición: ISBN-13 o, si no hay, editorial + año normalizados. */
+  function esOtraEdicion(a, b) {
+    if (a.edicion.isbn13 && b.edicion.isbn13) return a.edicion.isbn13 !== b.edicion.isbn13;
+    return limpiarEditorial(a.edicion.editorial) !== limpiarEditorial(b.edicion.editorial) || a.edicion.anio !== b.edicion.anio;
+  }
+
+  /**
+   * Clasifica el resultado de un registro.
+   * @param forzado candidato elegido manualmente (omite la comprobación de ambigüedad)
+   */
+  function clasificar(req, cands, forzado) {
+    const T = BB.CONFIG.umbrales;
+    if (!cands.length) {
+      return { estado: E.NO_ENCONTRADO, motivo: req.isbn || req.titulo ? 'Ninguna fuente devolvió resultados' : 'Datos insuficientes: falta ISBN válido o título' };
+    }
+    const best = forzado || cands[0], d = best.ev.det, s = best.ev.score;
+
+    if (req.isbn) {
+      if (d.isbn === 1) {
+        if (req.titulo && d.titulo < 0.5) return { estado: E.REVISION, motivo: 'El ISBN coincide, pero el título difiere mucho: posible error de captura' };
+        if (s >= T.confirmado) return { estado: E.CONFIRMADO, motivo: req.titulo ? 'ISBN exacto y datos concordantes' : 'ISBN exacto' };
+        return { estado: E.PROBABLE, motivo: 'ISBN exacto, pero algunos datos secundarios difieren' };
+      }
+      const obra = (d.titulo || 0) >= T.tituloObra && (!req.autor || (d.autor || 0) >= T.autorObra);
+      if (obra) return { estado: E.DIFERENTE, motivo: 'La obra coincide, pero el ISBN solicitado no aparece: el resultado corresponde a otra edición' };
+      return { estado: E.NO_ENCONTRADO, motivo: req.titulo ? 'Ni el ISBN ni el título producen una coincidencia suficiente' : 'No se encontró ningún registro con ese ISBN' };
+    }
+
+    if (!req.titulo) return { estado: E.NO_ENCONTRADO, motivo: 'Datos insuficientes: falta ISBN válido o título' };
+    if ((d.titulo || 0) < 0.5 || s < T.minimo) return { estado: E.NO_ENCONTRADO, motivo: 'Ningún resultado alcanza la coincidencia mínima' };
+
+    const obraOK = d.titulo >= T.tituloObra && (!req.autor || d.autor >= T.autorObra);
+    const edicionDistinta = (req.editorial && d.editorial < 0.5) || (req.anio && d.anio < 0.5);
+    if (obraOK && edicionDistinta) return { estado: E.DIFERENTE, motivo: 'La obra coincide, pero la editorial o el año no corresponden a la edición solicitada' };
+
+    if (!forzado) {
+      const rivales = cands.filter(c => c !== best && esOtraEdicion(c, best) && c.ev.score >= T.probable && best.ev.score - c.ev.score < T.margenAmbiguedad);
+      if (rivales.length) return { estado: E.REVISION, motivo: `Hay ${rivales.length + 1} ediciones plausibles con puntuación similar; elija la correcta` };
+    }
+
+    const edicionOK = req.editorial && req.anio && d.editorial >= T.editorialEdicion && d.anio === 1;
+    if (obraOK && edicionOK && s >= T.confirmado) return { estado: E.CONFIRMADO, motivo: 'Título, autor, editorial y año concuerdan (sin ISBN de contraste)' };
+    if (s >= T.probable) return { estado: E.PROBABLE, motivo: obraOK ? 'La obra coincide; falta confirmar la edición (ISBN, editorial o año)' : 'Coincidencia parcial de datos' };
+    return { estado: E.REVISION, motivo: 'Coincidencia débil; requiere revisión' };
+  }
+
+  return { simTexto, simAutor, simEditorial, simAnio, evaluar, discrepancias, clasificar, esOtraEdicion };
+})();
+</script>
+<script>
+/* ==================== js/covers.js ==================== */
+/* =====================================================================
+   js/covers.js — Verificación y obtención de portadas
+   ===================================================================== */
+BB.Covers = (() => {
+  const cache = new Map(); // url → Promise<{ok, w, h, motivo}>
+
+  function verificar(url) {
+    if (!url) return Promise.resolve({ ok: false, motivo: 'Sin URL de portada' });
+    if (cache.has(url)) return cache.get(url);
+    const cfg = BB.CONFIG.portadas;
+    const p = new Promise(resolver => {
+      const img = new Image();
+      let terminado = false;
+      const fin = r => { if (!terminado) { terminado = true; clearTimeout(t); resolver(r); } };
+      const t = setTimeout(() => fin({ ok: false, motivo: 'La imagen no respondió a tiempo' }), cfg.timeoutMs);
+      img.onload = () => {
+        const ok = img.naturalWidth >= cfg.ladoMinimo && img.naturalHeight >= cfg.ladoMinimo;
+        fin({ ok, w: img.naturalWidth, h: img.naturalHeight, motivo: ok ? '' : 'La fuente devolvió una imagen vacía (marcador sin portada)' });
+      };
+      img.onerror = () => fin({ ok: false, motivo: 'Imagen inaccesible o inexistente' });
+      img.referrerPolicy = 'no-referrer';
+      img.src = url;
+    });
+    cache.set(url, p);
+    return p;
+  }
+
+  /** Verifica la portada de un candidato y actualiza su estado. Devuelve la URL utilizable o ''. */
+  async function obtenerPortada(cand) {
+    const ed = cand.edicion;
+    if (!ed.portadaUrl) { ed.portadaEstado = 'sin portada'; return ''; }
+    if (ed.portadaEstado === 'verificada') return ed.portadaUrl;
+    const r = await verificar(ed.portadaUrl);
+    ed.portadaEstado = r.ok ? 'verificada' : 'inaccesible';
+    ed.portadaMotivo = r.motivo || '';
+    return r.ok ? ed.portadaUrl : '';
+  }
+
+  /** URL de tamaño grande para la vista ampliada (sin inventar imágenes). */
+  function urlGrande(url) {
+    if (!url) return '';
+    if (url.includes('covers.openlibrary.org')) return url.replace(/-M\.jpg/, '-L.jpg');
+    if (url.includes('books.google')) return url.replace(/zoom=\d/, 'zoom=0');
+    return url;
+  }
+
+  /**
+   * Descarga una portada como JPEG base64 para incrustarla en XLSX.
+   * Requiere que el servidor de imágenes permita CORS; si no, devuelve null.
+   */
+  async function aBase64(url, altoMax = 240) {
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), BB.CONFIG.portadas.timeoutMs);
+      const r = await fetch(url, { mode: 'cors', signal: ctrl.signal });
+      clearTimeout(t);
+      if (!r.ok) return null;
+      const blob = await r.blob();
+      if (!blob.type.startsWith('image/')) return null;
+      const bmp = await createImageBitmap(blob);
+      const escala = Math.min(1, altoMax / bmp.height);
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(bmp.width * escala));
+      c.height = Math.max(1, Math.round(bmp.height * escala));
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+      ctx.drawImage(bmp, 0, 0, c.width, c.height);
+      return { base64: c.toDataURL('image/jpeg', 0.85), w: c.width, h: c.height };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  return { verificar, obtenerPortada, urlGrande, aBase64 };
+})();
+</script>
+<script>
+/* ==================== js/search.js ==================== */
+/* =====================================================================
+   js/search.js — Orquestación: búsqueda, caché de sesión, lote
+   ===================================================================== */
+BB.Search = (() => {
+  const U = BB.Utils, E = BB.ESTADOS;
+  const cache = new Map(); // clave de consulta → Promise<Candidato[]>
+
+  /** Memoriza la PROMESA: dos registros iguales en paralelo comparten una sola solicitud. */
+  function memo(clave, fn) {
+    if (!cache.has(clave)) {
+      const p = fn().catch(e => { cache.delete(clave); throw e; });
+      cache.set(clave, p);
+    }
+    return cache.get(clave);
+  }
+
+  const clonar = c => Object.assign({}, c, { id: U.uid('c'), obra: Object.assign({}, c.obra), edicion: c.edicion, ev: null });
+  // Nota: "edicion" se comparte a propósito para que la verificación de portada valga para todos.
+
+  // Enfriamiento: si una fuente devuelve HTTP 429, se deja de consultar durante un tiempo.
+  const enfriamiento = new Map(); // id de fuente → marca de tiempo hasta la que se omite
+  const ENFRIAMIENTO_MS = 60000;
+
+  async function consultarFuente(adaptador, tipo, params) {
+    const hasta = enfriamiento.get(adaptador.id) || 0;
+    if (Date.now() < hasta) {
+      const e = new Error(`En pausa por límite de solicitudes; se reanuda en ${Math.ceil((hasta - Date.now()) / 1000)} s`);
+      e.code = 'LIMITE'; throw e;
+    }
+    try { return await consultarFuenteMemo(adaptador, tipo, params); }
+    catch (e) { if (e.code === 'LIMITE') enfriamiento.set(adaptador.id, Date.now() + ENFRIAMIENTO_MS); throw e; }
+  }
+
+  function consultarFuenteMemo(adaptador, tipo, params) {
+    const clave = tipo === 'isbn'
+      ? `${adaptador.id}|isbn|${params.isbn13 || params.isbn10}`
+      : `${adaptador.id}|titulo|${U.normalizarTexto(params.titulo)}|${U.normalizarTexto(params.autor)}`;
+    return memo(clave, () => (tipo === 'isbn' ? adaptador.buscarPorISBN(params) : adaptador.buscarPorTitulo(params)));
+  }
+
+  /** Consulta todas las fuentes activas; los errores de una fuente no detienen a las demás. */
+  async function consultarFuentes(tipo, params) {
+    const r = { candidatos: [], errores: [], consultas: [] };
+    await Promise.all(BB.Fuentes.activas().map(async f => {
+      const fecha = U.fechaISO();
+      try {
+        const lista = await consultarFuente(f, tipo, params);
+        lista.forEach(c => r.candidatos.push(clonar(c)));
+        r.consultas.push({ fuente: f.nombre, tipo: tipo === 'isbn' ? 'ISBN' : 'Título/autor', resultado: `${lista.length} resultado(s)`, fecha });
+      } catch (e) {
+        r.errores.push({ fuente: f.nombre, mensaje: e.message, code: e.code });
+        r.consultas.push({ fuente: f.nombre, tipo: tipo === 'isbn' ? 'ISBN' : 'Título/autor', resultado: 'Error: ' + e.message, fecha });
+      }
+    }));
+    return r;
+  }
+
+  // Funciones con nombre solicitadas en la especificación
+  const consultarOpenLibrary = (tipo, p) => consultarFuente(BB.Fuentes.porId('openlibrary'), tipo, p);
+  const consultarGoogleBooks = (tipo, p) => consultarFuente(BB.Fuentes.porId('googlebooks'), tipo, p);
+  const buscarPorISBN = info => consultarFuentes('isbn', info);
+  const buscarPorTitulo = titulo => consultarFuentes('titulo', { titulo });
+  const buscarPorTituloAutor = (titulo, autor, editorial, anio) => consultarFuentes('titulo', { titulo, autor, editorial, anio });
+
+  function unir(a, b) {
+    return { candidatos: a.candidatos.concat(b.candidatos), errores: a.errores.concat(b.errores), consultas: a.consultas.concat(b.consultas) };
+  }
+
+  /** Convierte la entrada original en una solicitud normalizada (sin alterar la entrada). */
+  function construirSolicitud(entrada) {
+    const obs = [];
+    let isbn = null;
+    if (entrada.isbn) {
+      const a = BB.ISBN.analizar(entrada.isbn);
+      if (a.valido) isbn = a; else obs.push(`ISBN inválido (${a.normal || entrada.isbn}): ${a.error}`);
+    }
+    const anio = U.extraerAnio(entrada.anio);
+    if (U.limpio(entrada.anio) && !anio) obs.push(`Año no reconocible en la entrada: «${entrada.anio}»`);
+    (entrada.notas || []).forEach(n => obs.push(n));
+    return {
+      req: { isbn, titulo: U.limpio(entrada.titulo), autor: U.limpio(entrada.autor), editorial: U.limpio(entrada.editorial), anio },
+      obs
+    };
+  }
+
+  function ordenar(cands) {
+    return cands.sort((a, b) =>
+      b.ev.score - a.ev.score ||
+      (b.edicion.portadaUrl ? 1 : 0) - (a.edicion.portadaUrl ? 1 : 0) ||
+      a.fuente.localeCompare(b.fuente));
+  }
+
+  /** Re-evalúa candidatos y estado (tras cambiar pesos o selección manual). */
+  function reevaluar(reg) {
+    if (!reg.candidatos) return;
+    reg.candidatos.forEach(c => { c.ev = BB.Matcher.evaluar(reg.req, c); });
+    ordenar(reg.candidatos);
+    if (!reg.seleccionManual) reg.seleccion = reg.candidatos[0] ? reg.candidatos[0].id : null;
+    const forzado = reg.seleccionManual ? reg.candidatos.find(c => c.id === reg.seleccion) : null;
+    const cls = BB.Matcher.clasificar(reg.req, reg.candidatos, forzado);
+    reg.estadoAuto = cls.estado;
+    reg.motivo = cls.motivo;
+    if (reg.validadoManual) reg.estado = E.CONFIRMADO;
+    else if (reg.marcadoNoEncontrado) reg.estado = E.NO_ENCONTRADO;
+    else reg.estado = cls.estado;
+  }
+
+  /** Si la portada elegida falla, usa otra portada VERIFICADA de la MISMA edición (mismo ISBN-13). */
+  function portadaMismaEdicion(reg) {
+    reg.portadaOverride = reg.portadaManual || null;
+    if (reg.portadaManual) return;
+    const sel = reg.candidatos.find(c => c.id === reg.seleccion);
+    if (!sel || sel.edicion.portadaEstado === 'verificada' || !sel.edicion.isbn13) return;
+    const alt = reg.candidatos.find(c => c !== sel && c.edicion.portadaEstado === 'verificada' && c.edicion.isbns13.includes(sel.edicion.isbn13));
+    if (alt) reg.portadaOverride = { url: alt.edicion.portadaUrl, fuente: alt.fuente, nota: `Portada de la misma edición (ISBN-13 ${sel.edicion.isbn13}) obtenida de ${alt.fuente}` };
+  }
+
+  async function verificarPortadas(reg, cuantos) {
+    const lista = reg.candidatos.slice(0, cuantos);
+    const sel = reg.candidatos.find(c => c.id === reg.seleccion);
+    if (sel && !lista.includes(sel)) lista.push(sel);
+    await Promise.all(lista.map(c => BB.Covers.obtenerPortada(c)));
+    portadaMismaEdicion(reg);
+  }
+
+  /** Procesa un registro completo. Nunca lanza: los errores quedan en el registro. */
+  async function procesarRegistro(reg) {
+    reg.estado = E.PROCESANDO;
+    const { req, obs } = construirSolicitud(reg.entrada);
+    reg.req = req; reg.obsEntrada = obs; reg.reintentable = false;
+    let r = { candidatos: [], errores: [], consultas: [] };
+    try {
+      if (req.isbn) r = unir(r, await buscarPorISBN(req.isbn));
+      const hayISBNExacto = req.isbn && r.candidatos.some(c => c.edicion.isbns13.includes(req.isbn.isbn13));
+      if (req.titulo && !hayISBNExacto) {
+        if (req.isbn) reg.obsEntrada.push('El ISBN no dio resultado exacto; se buscó también por título');
+        r = unir(r, req.autor ? await buscarPorTituloAutor(req.titulo, req.autor, req.editorial, req.anio) : await buscarPorTitulo(req.titulo));
+      }
+    } catch (e) {
+      r.errores.push({ fuente: 'Aplicación', mensaje: e.message });
+    }
+
+    // Deduplicar resultados repetidos de la misma fuente
+    const vistos = new Set();
+    reg.candidatos = r.candidatos.filter(c => {
+      const k = `${c.fuente}|${c.edicion.idEdicion || c.edicion.isbn13 || c.obra.titulo}`;
+      if (vistos.has(k)) return false; vistos.add(k); return true;
+    }).slice(0, 80);
+    reg.errores = r.errores;
+    reg.consultas = r.consultas;
+    reg.fechaConsulta = U.fechaISO();
+    reg.seleccionManual = false; reg.validadoManual = ''; reg.marcadoNoEncontrado = false; reg.portadaManual = null;
+
+    reevaluar(reg);
+
+    const fuentesActivas = BB.Fuentes.activas().length;
+    const fuentesConError = new Set(r.errores.map(e => e.fuente)).size;
+    if (!reg.candidatos.length && fuentesActivas && fuentesConError >= fuentesActivas) {
+      reg.estado = E.REVISION;
+      reg.motivo = 'Ninguna fuente respondió; conviene reintentar más tarde';
+      reg.reintentable = true;
+    } else if (fuentesConError) {
+      reg.reintentable = true;
+    }
+    if (reg.candidatos.length) await verificarPortadas(reg, BB.CONFIG.portadas.verificarPrimeros);
+    return reg;
+  }
+
+  /** Cola con concurrencia controlada, pausas, pausa/reanudar y cancelar. */
+  function crearLote(registros, alAvanzar) {
+    const lote = { total: registros.length, hechos: 0, pausado: false, cancelado: false, promesa: null };
+    let i = 0;
+    const trabajador = async () => {
+      while (i < registros.length && !lote.cancelado) {
+        while (lote.pausado && !lote.cancelado) await U.esperar(200);
+        if (lote.cancelado) break;
+        const reg = registros[i++];
+        try { await procesarRegistro(reg); }
+        catch (e) { reg.estado = E.REVISION; reg.motivo = 'Error inesperado: ' + e.message; reg.reintentable = true; }
+        lote.hechos++;
+        alAvanzar(lote, reg);
+        await U.esperar(BB.CONFIG.red.pausaMs);
+      }
+    };
+    const n = Math.max(1, Math.min(BB.CONFIG.red.concurrencia, registros.length));
+    lote.promesa = Promise.all(Array.from({ length: n }, trabajador));
+    return lote;
+  }
+
+  return { procesarRegistro, crearLote, reevaluar, verificarPortadas, construirSolicitud,
+    buscarPorISBN, buscarPorTitulo, buscarPorTituloAutor, consultarOpenLibrary, consultarGoogleBooks,
+    limpiarCache: () => { cache.clear(); enfriamiento.clear(); } };
+})();
+</script>
+<script>
+/* ==================== js/results.js ==================== */
+/* =====================================================================
+   js/results.js — Estado de la sesión y renderizado de resultados
+   ===================================================================== */
+BB.Results = (() => {
+  const U = BB.Utils, E = BB.ESTADOS, esc = U.esc;
+  const S = { registros: [], filtro: 'TODOS', orden: 'num', abiertos: new Set(), ordenCand: {}, siguiente: 1 };
+
+  const CLASE_ESTADO = {
+    [E.CONFIRMADO]: 'confirmado', [E.PROBABLE]: 'probable', [E.DIFERENTE]: 'diferente',
+    [E.REVISION]: 'revision', [E.NO_ENCONTRADO]: 'noenc', [E.PENDIENTE]: 'pendiente', [E.PROCESANDO]: 'procesando'
+  };
+  const FILTROS = [
+    ['TODOS', 'Todos'], [E.CONFIRMADO, 'Confirmados'], [E.PROBABLE, 'Probables'], [E.DIFERENTE, 'Edición diferente'],
+    [E.REVISION, 'Revisión manual'], [E.NO_ENCONTRADO, 'No encontrados'], [E.PENDIENTE, 'Pendientes']
+  ];
+
+  /* ---------------------------- Consultas --------------------------- */
+  const seleccionado = reg => (reg.candidatos || []).find(c => c.id === reg.seleccion) || null;
+
+  function portadaDe(reg) {
+    if (reg.portadaOverride) return reg.portadaOverride;
+    const c = seleccionado(reg);
+    if (c && c.edicion.portadaEstado === 'verificada') return { url: c.edicion.portadaUrl, fuente: c.fuente, nivel: c.edicion.portadaNivel };
+    return null;
+  }
+
+  function observaciones(reg) {
+    const o = [].concat(reg.obsEntrada || []);
+    if (reg.duplicadoDe) o.push(`Registro duplicado del n.º ${reg.duplicadoDe}`);
+    if (reg.motivo) o.push(reg.motivo);
+    const c = seleccionado(reg);
+    if (c) {
+      o.push(...BB.Matcher.discrepancias(reg.req, c));
+      if (reg.portadaOverride) o.push(reg.portadaOverride.nota);
+      else if (!c.edicion.portadaUrl) o.push('La fuente no ofrece portada para este resultado');
+      else if (c.edicion.portadaEstado === 'inaccesible') o.push('Portada no disponible: ' + c.edicion.portadaMotivo);
+      else if (c.edicion.portadaNivel === 'obra') o.push('Portada asociada a la obra, no verificada para esta edición');
+      else if (c.edicion.portadaNivel === 'volumen') o.push('Portada de un volumen sin ISBN: no se puede asegurar la edición');
+    }
+    (reg.errores || []).forEach(e => o.push(`${e.fuente}: ${e.mensaje}`));
+    if (reg.validadoManual) o.push(`Validado manualmente el ${U.fechaLegible(reg.validadoManual)}`);
+    else if (reg.seleccionManual) o.push('Resultado elegido manualmente, pendiente de confirmar');
+    if (reg.marcadoNoEncontrado) o.push('Marcado manualmente como no encontrado');
+    return [...new Set(o.filter(Boolean))];
+  }
+
+  function contar() {
+    const c = { total: S.registros.length, encontrados: 0 };
+    Object.values(E).forEach(e => { c[e] = 0; });
+    S.registros.forEach(r => {
+      const e = r.estado === E.PROCESANDO ? E.PENDIENTE : r.estado;
+      c[e]++;
+      if (seleccionado(r) && ![E.NO_ENCONTRADO, E.PENDIENTE, E.PROCESANDO].includes(r.estado)) c.encontrados++;
+    });
+    return c;
+  }
+
+  /* ------------------------------ Vista ----------------------------- */
+  const guion = v => (U.limpio(v) ? esc(v) : '<span class="nd">—</span>');
+
+  function claseCampo(c, campo) {
+    if (!c || !c.ev || !(campo in c.ev.det)) return '';
+    const v = c.ev.det[campo];
+    return v >= 0.85 ? 'coincide' : v >= 0.5 ? 'parcial' : 'difiere';
+  }
+  function solicitado(c, campo, valor) {
+    const k = claseCampo(c, campo);
+    return valor && k && k !== 'coincide' ? `<div class="solicitado">Solicitado: ${esc(valor)}</div>` : '';
+  }
+  function barraConfianza(score) {
+    const n = Math.max(0, Math.min(100, score));
+    const tono = n >= 85 ? 'alta' : n >= 60 ? 'media' : 'baja';
+    return `<div class="confianza ${tono}"><div class="pista"><span style="width:${n}%"></span></div><b>${n}%</b></div>`;
+  }
+  function enlaceCorto(url, texto) {
+    if (!url) return '<span class="nd">—</span>';
+    let host = '';
+    try { host = new URL(url).hostname.replace(/^www\./, ''); } catch (_) { host = 'enlace'; }
+    return `<a href="${esc(url)}" target="_blank" rel="noopener" title="${esc(url)}">${esc(texto || host)}</a>`;
+  }
+
+  function filaHTML(reg) {
+    const c = seleccionado(reg), p = portadaDe(reg), e = reg.entrada, abierto = S.abiertos.has(reg.id);
+    const k = CLASE_ESTADO[reg.estado] || 'pendiente';
+    const obs = reg.estado === E.PENDIENTE || reg.estado === E.PROCESANDO ? [] : observaciones(reg);
+    const isbnSol = reg.req && reg.req.isbn ? reg.req.isbn.normal : U.limpio(e.isbn);
+    const n = (reg.candidatos || []).length;
+    return `<tr class="fila e-${k}${abierto ? ' abierta' : ''}" data-id="${reg.id}">
+      <td class="c-estado">
+        <span class="insignia e-${k}">${esc(reg.estado)}</span>
+        ${reg.validadoManual ? '<span class="sello-manual">Validado a mano</span>' : ''}
+        <div class="num">n.º ${reg.num}${e.fila ? ' · ' + esc(e.fila) : ''}</div>
+        <div class="botones-fila">
+          ${n ? `<button type="button" class="mini" data-accion="detalle" aria-expanded="${abierto}">${abierto ? 'Cerrar detalle' : `Detalle (${n})`}</button>` : ''}
+          ${reg.reintentable ? '<button type="button" class="mini" data-accion="reintentar">Reintentar</button>' : ''}
+        </div>
+      </td>
+      <td class="c-portada">${p
+        ? `<button type="button" class="miniatura" data-accion="ver-portada" title="Ampliar portada"><img src="${esc(p.url)}" alt="Portada" loading="lazy" referrerpolicy="no-referrer"></button>`
+        : `<div class="sin-portada">${reg.estado === E.PROCESANDO ? 'Buscando…' : 'Sin portada'}</div>`}</td>
+      <td class="c-titulo ${claseCampo(c, 'titulo')}"><span class="titulo-libro">${c ? esc(c.obra.titulo) : `<span class="nd">${esc(e.titulo) || '—'}</span>`}</span>${c ? solicitado(c, 'titulo', reg.req.titulo) : ''}</td>
+      <td class="${claseCampo(c, 'autor')}">${c ? guion(c.obra.autores.join('; ')) : guion('')}${solicitado(c, 'autor', reg.req && reg.req.autor)}</td>
+      <td class="${claseCampo(c, 'editorial')}">${c ? guion(c.edicion.editorial) : guion('')}${solicitado(c, 'editorial', reg.req && reg.req.editorial)}</td>
+      <td class="cod ${claseCampo(c, 'isbn')}">${c ? guion(c.edicion.isbn10) : guion('')}</td>
+      <td class="cod ${claseCampo(c, 'isbn')}">${c ? guion(c.edicion.isbn13) : guion('')}${solicitado(c, 'isbn', isbnSol)}</td>
+      <td class="cod ${claseCampo(c, 'anio')}">${c ? guion(c.edicion.anio) : guion('')}${solicitado(c, 'anio', reg.req && reg.req.anio)}</td>
+      <td>${c ? esc(c.fuente) : guion('')}</td>
+      <td>${c ? barraConfianza(c.ev.score) : guion('')}</td>
+      <td class="c-url">${c ? enlaceCorto(c.urlFuente) : guion('')}</td>
+      <td class="c-url">${p ? enlaceCorto(p.url) : guion('')}</td>
+      <td class="c-obs">${obs.length ? `<ul>${obs.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : guion('')}</td>
+    </tr>${abierto && reg.candidatos && reg.candidatos.length ? detalleHTML(reg) : ''}`;
+  }
+
+  function ordenarCandidatos(reg) {
+    const lista = (reg.candidatos || []).slice();
+    const modo = S.ordenCand[reg.id] || 'confianza';
+    const f = {
+      confianza: (a, b) => b.ev.score - a.ev.score,
+      anio: (a, b) => (+b.edicion.anio || 0) - (+a.edicion.anio || 0),
+      fuente: (a, b) => a.fuente.localeCompare(b.fuente) || b.ev.score - a.ev.score,
+      editorial: (a, b) => a.edicion.editorial.localeCompare(b.edicion.editorial, 'es') || b.ev.score - a.ev.score
+    }[modo];
+    return lista.sort(f);
+  }
+
+  function detalleHTML(reg) {
+    const c = seleccionado(reg), r = reg.req || {}, d = c ? c.ev.det : {};
+    const filaComp = (nombre, sol, enc, campo) => {
+      const k = claseCampo(c, campo);
+      const val = campo in d ? `${Math.round(d[campo] * 100)}%` : 'No solicitado';
+      return `<tr class="${k}"><th scope="row">${nombre}</th><td>${guion(sol)}</td><td>${guion(enc)}</td><td class="valor">${val}</td></tr>`;
+    };
+    const comparacion = c ? `<table class="comparacion"><thead><tr><th>Campo</th><th>Dato solicitado</th><th>Dato encontrado</th><th>Similitud</th></tr></thead><tbody>
+      ${filaComp('ISBN', r.isbn ? `${r.isbn.normal}${r.isbn.tipo === 'ISBN-10' && r.isbn.isbn13 ? ' (= ' + r.isbn.isbn13 + ')' : ''}` : '', [c.edicion.isbn13, c.edicion.isbn10].filter(Boolean).join(' / '), 'isbn')}
+      ${filaComp('Título', r.titulo, [c.obra.titulo, c.obra.subtitulo].filter(Boolean).join(': '), 'titulo')}
+      ${filaComp('Autor', r.autor, c.obra.autores.join('; '), 'autor')}
+      ${filaComp('Editorial', r.editorial, c.edicion.editorial, 'editorial')}
+      ${filaComp('Año', r.anio, c.edicion.anio, 'anio')}
+    </tbody></table>` : '<p class="aviso-vacio">No hay un resultado seleccionado.</p>';
+
+    const modo = S.ordenCand[reg.id] || 'confianza';
+    const candidatos = ordenarCandidatos(reg).map(k => {
+      const sel = k.id === reg.seleccion, ed = k.edicion;
+      const img = ed.portadaEstado === 'verificada'
+        ? `<img src="${esc(ed.portadaUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
+        : `<span>${ed.portadaEstado === 'sin verificar' ? 'Verificando…' : 'Sin portada'}</span>`;
+      return `<article class="candidato${sel ? ' elegido' : ''}">
+        <div class="cand-portada">${img}</div>
+        <div class="cand-datos">
+          <h4>${esc(k.obra.titulo) || '—'}</h4>
+          <p>${guion(k.obra.autores.join('; '))}</p>
+          <p>${guion(ed.editorial)}, ${guion(ed.anio)}</p>
+          <p class="cod">ISBN-13 ${guion(ed.isbn13)} · ISBN-10 ${guion(ed.isbn10)}</p>
+          <p class="cand-fuente">${esc(k.fuente)} · ${enlaceCorto(k.urlFuente, 'ver ficha')}${ed.portadaNivel === 'obra' ? ' · portada de la obra' : ''}</p>
+        </div>
+        <div class="cand-accion">
+          ${barraConfianza(k.ev.score)}
+          ${sel ? '<span class="marca-elegido">Resultado elegido</span>' : `<button type="button" class="mini" data-accion="elegir" data-cand="${k.id}">Elegir este</button>`}
+        </div>
+      </article>`;
+    }).join('');
+
+    const vistas = new Set();
+    const portadas = (reg.candidatos || []).filter(k => k.edicion.portadaEstado === 'verificada' && !vistas.has(k.edicion.portadaUrl) && vistas.add(k.edicion.portadaUrl));
+    const pActual = portadaDe(reg);
+    const selector = portadas.length > 1 ? `<section class="selector-portadas"><h3>Portadas disponibles</h3>
+      <p class="ayuda">Si elige una portada de otra edición quedará indicado en observaciones.</p>
+      <div class="rejilla-portadas">${portadas.map(k => {
+        const misma = c && c.edicion.isbn13 && k.edicion.isbns13.includes(c.edicion.isbn13);
+        const actual = pActual && pActual.url === k.edicion.portadaUrl;
+        const rotulo = c && k.id === c.id ? 'Edición elegida' : misma ? 'Misma edición' : 'Otra edición';
+        return `<button type="button" class="opcion-portada${actual ? ' actual' : ''}" data-accion="usar-portada" data-cand="${k.id}" title="${esc(k.fuente)}: ${esc(k.edicion.editorial)} ${esc(k.edicion.anio)}">
+          <img src="${esc(k.edicion.portadaUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer">
+          <span>${rotulo}<br>${esc(k.edicion.editorial || k.fuente)}${k.edicion.anio ? ', ' + esc(k.edicion.anio) : ''}</span></button>`;
+      }).join('')}</div></section>` : '';
+
+    return `<tr class="detalle" data-id="${reg.id}"><td colspan="13"><div class="detalle-caja">
+      <div class="detalle-cabecera">
+        <h3>Comparación del registro n.º ${reg.num}</h3>
+        <div class="detalle-acciones">
+          ${reg.validadoManual
+            ? '<button type="button" class="secundario" data-accion="deshacer">Deshacer validación</button>'
+            : `<button type="button" class="primario" data-accion="confirmar" ${c ? '' : 'disabled'}>Confirmar este resultado</button>`}
+          ${reg.marcadoNoEncontrado ? '' : '<button type="button" class="secundario" data-accion="no-encontrado">Marcar como no encontrado</button>'}
+        </div>
+      </div>
+      ${comparacion}
+      ${selector}
+      <div class="candidatos-cabecera"><h3>Candidatos (${(reg.candidatos || []).length})</h3>
+        <label>Ordenar por <select data-accion="orden-cand">
+          ${[['confianza', 'Confianza'], ['anio', 'Año'], ['editorial', 'Editorial'], ['fuente', 'Fuente']].map(([v, t]) => `<option value="${v}"${v === modo ? ' selected' : ''}>${t}</option>`).join('')}
+        </select></label></div>
+      <div class="lista-candidatos">${candidatos}</div>
+    </div></td></tr>`;
+  }
+
+  function visibles() {
+    let lista = S.registros.filter(r => {
+      if (S.filtro === 'TODOS') return true;
+      if (S.filtro === E.PENDIENTE) return r.estado === E.PENDIENTE || r.estado === E.PROCESANDO;
+      return r.estado === S.filtro;
+    });
+    const conf = r => { const c = seleccionado(r); return c ? c.ev.score : -1; };
+    const orden = {
+      num: (a, b) => a.num - b.num,
+      'conf-desc': (a, b) => conf(b) - conf(a) || a.num - b.num,
+      'conf-asc': (a, b) => conf(a) - conf(b) || a.num - b.num,
+      estado: (a, b) => a.estado.localeCompare(b.estado, 'es') || a.num - b.num,
+      titulo: (a, b) => (U.limpio(a.entrada.titulo) || 'zzz').localeCompare(U.limpio(b.entrada.titulo) || 'zzz', 'es')
+    }[S.orden];
+    return lista.sort(orden);
+  }
+
+  function renderContadores() {
+    const c = contar();
+    const items = [
+      ['Registros', c.total, ''], ['Encontrados', c.encontrados, ''],
+      ['Confirmados', c[E.CONFIRMADO], 'confirmado'], ['Probables', c[E.PROBABLE], 'probable'],
+      ['Edición diferente', c[E.DIFERENTE], 'diferente'], ['Revisión manual', c[E.REVISION], 'revision'],
+      ['No encontrados', c[E.NO_ENCONTRADO], 'noenc']
+    ];
+    document.getElementById('contadores').innerHTML = items.map(([t, n, k]) =>
+      `<div class="contador ${k ? 'e-' + k : ''}"><strong>${n}</strong><span>${t}</span></div>`).join('');
+    document.getElementById('filtros').innerHTML = FILTROS.map(([v, t]) => {
+      const n = v === 'TODOS' ? c.total : v === E.PENDIENTE ? c[E.PENDIENTE] : c[v];
+      return `<button type="button" class="filtro${S.filtro === v ? ' activo' : ''}" data-filtro="${esc(v)}" aria-pressed="${S.filtro === v}">${t} <span>${n}</span></button>`;
+    }).join('');
+  }
+
+  function render() {
+    renderContadores();
+    const lista = visibles();
+    document.getElementById('cuerpo').innerHTML = lista.map(filaHTML).join('');
+    const vacio = document.getElementById('vacio');
+    vacio.hidden = S.registros.length > 0 && lista.length > 0;
+    vacio.textContent = S.registros.length
+      ? 'Ningún registro coincide con el filtro elegido.'
+      : 'Aún no hay búsquedas. Escriba un ISBN o un título en el panel de la izquierda, o importe un Excel con su inventario.';
+    document.getElementById('btnExportar').disabled = !S.registros.some(r => r.estado !== E.PENDIENTE && r.estado !== E.PROCESANDO);
+  }
+
+  let temporizador = null;
+  function programarRender(ms = 250) {
+    if (temporizador) return;
+    temporizador = setTimeout(() => { temporizador = null; render(); }, ms);
+  }
+
+  return { S, seleccionado, portadaDe, observaciones, contar, render, programarRender };
+})();
+</script>
+<script>
+/* ==================== js/excel.js ==================== */
+/* =====================================================================
+   js/excel.js — Importación (XLSX/CSV) y exportación XLSX (ExcelJS)
+   Se usa ExcelJS porque, a diferencia de SheetJS Community, permite
+   insertar imágenes físicamente dentro de la hoja.
+   ===================================================================== */
+BB.Excel = (() => {
+  const U = BB.Utils, E = BB.ESTADOS;
+
+  const ALIAS = {
+    isbn13: ['isbn 13', 'isbn13'],
+    isbn10: ['isbn 10', 'isbn10'],
+    isbn: ['isbn'],
+    titulo: ['titulo', 'title', 'obra', 'titulo de la obra', 'nombre del libro', 'libro'],
+    autor: ['autor', 'autores', 'author', 'authors', 'autora', 'autor es'],
+    editorial: ['editorial', 'editor', 'publisher', 'casa editorial', 'sello', 'sello editorial'],
+    anio: ['ano', 'anio', 'year', 'fecha', 'ano de publicacion', 'ano de edicion', 'fecha de publicacion']
+  };
+
+  function mapearEncabezados(celdas) {
+    const mapa = {};
+    celdas.forEach((c, i) => {
+      const n = U.normalizarTexto(c);
+      for (const [campo, lista] of Object.entries(ALIAS)) {
+        if (!(campo in mapa) && lista.includes(n)) { mapa[campo] = i; break; }
+      }
+    });
+    return ('titulo' in mapa || 'isbn' in mapa || 'isbn10' in mapa || 'isbn13' in mapa) ? mapa : null;
+  }
+
+  function valorCelda(v) {
+    if (v === null || v === undefined) return '';
+    if (v instanceof Date) return String(v.getFullYear());
+    if (typeof v === 'object') {
+      if (v.richText) return v.richText.map(t => t.text).join('');
+      if ('result' in v) return valorCelda(v.result);
+      if (v.text) return valorCelda(v.text);
+      return '';
+    }
+    return U.limpio(v);
+  }
+
+  /** Excel guarda ISBN como número y pierde ceros iniciales: se reponen con cautela. */
+  function repararISBN(s, campo) {
+    const t = U.limpio(s);
+    if (/^\d{9}$/.test(t) && campo !== 'isbn13') return '0' + t;
+    return t;
+  }
+
+  function registroDesdeCeldas(celdas, mapa, fila) {
+    const v = campo => (campo in mapa ? U.limpio(celdas[mapa[campo]]) : '');
+    const c13 = repararISBN(v('isbn13'), 'isbn13'), c10 = repararISBN(v('isbn10'), 'isbn10'), cg = repararISBN(v('isbn'), 'isbn');
+    const notas = [];
+    const validos = [c13, cg, c10].filter(x => x && BB.ISBN.analizar(x).valido);
+    const isbn = validos[0] || c13 || cg || c10;
+    if (c10 && c13) {
+      const a10 = BB.ISBN.analizar(c10), a13 = BB.ISBN.analizar(c13);
+      if (a10.valido && a13.valido && a10.isbn13 !== a13.isbn13) notas.push('El ISBN-10 y el ISBN-13 de la entrada no son equivalentes; se usó el ISBN-13');
+    }
+    return { isbn, isbnOriginal10: c10, isbnOriginal13: c13 || (cg && BB.ISBN.normalizarISBN(cg).length === 13 ? cg : ''),
+      titulo: v('titulo'), autor: v('autor'), editorial: v('editorial'), anio: v('anio'), fila, notas };
+  }
+
+  function filasARegistros(filas, origen) {
+    let inicio = -1, mapa = null;
+    for (let i = 0; i < Math.min(filas.length, 6); i++) {
+      mapa = mapearEncabezados(filas[i].celdas);
+      if (mapa) { inicio = i; break; }
+    }
+    if (!mapa) throw new Error('No se reconocieron encabezados. Use columnas como ISBN, ISBN-10, ISBN-13, Título, Autor, Editorial y Año (descargue la plantilla).');
+    return filas.slice(inicio + 1)
+      .map(f => registroDesdeCeldas(f.celdas, mapa, `${origen} fila ${f.n}`))
+      .filter(r => r.isbn || r.titulo);
+  }
+
+  function parsearCSV(texto) {
+    const primera = texto.split(/\r?\n/)[0] || '';
+    const sep = [';', '\t', ','].sort((a, b) => primera.split(b).length - primera.split(a).length)[0];
+    const filas = []; let fila = [], campo = '', comillas = false;
+    for (let i = 0; i < texto.length; i++) {
+      const ch = texto[i];
+      if (comillas) {
+        if (ch === '"' && texto[i + 1] === '"') { campo += '"'; i++; }
+        else if (ch === '"') comillas = false;
+        else campo += ch;
+      } else if (ch === '"') comillas = true;
+      else if (ch === sep) { fila.push(campo); campo = ''; }
+      else if (ch === '\n') { fila.push(campo); filas.push(fila); fila = []; campo = ''; }
+      else if (ch !== '\r') campo += ch;
+    }
+    if (campo || fila.length) { fila.push(campo); filas.push(fila); }
+    return filas.map((c, i) => ({ celdas: c, n: i + 1 })).filter(f => f.celdas.some(x => U.limpio(x)));
+  }
+
+  async function leerArchivo(file) {
+    const nombre = file.name.toLowerCase();
+    if (nombre.endsWith('.csv') || nombre.endsWith('.txt')) {
+      return filasARegistros(parsearCSV(await file.text()), file.name);
+    }
+    if (nombre.endsWith('.xls')) throw new Error('El formato .xls antiguo no es compatible. Guarde el archivo como .xlsx desde Excel.');
+    if (!window.ExcelJS) throw new Error('No se pudo cargar la biblioteca de Excel (se requiere conexión a Internet).');
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(await file.arrayBuffer());
+    const ws = wb.worksheets[0];
+    if (!ws) throw new Error('El archivo no contiene hojas.');
+    const filas = [];
+    ws.eachRow({ includeEmpty: false }, (row, n) => {
+      const celdas = [];
+      row.eachCell({ includeEmpty: true }, (cell, col) => { celdas[col - 1] = valorCelda(cell.value); });
+      for (let i = 0; i < celdas.length; i++) if (celdas[i] === undefined) celdas[i] = '';
+      filas.push({ celdas, n });
+    });
+    return filasARegistros(filas, ws.name);
+  }
+
+  /* ---------------------------- Estilos ---------------------------- */
+  const COLOR_ESTADO = {
+    [E.CONFIRMADO]: 'FFDDF1E4', [E.PROBABLE]: 'FFDCE9F8', [E.DIFERENTE]: 'FFFBEBD2',
+    [E.REVISION]: 'FFEDE3F6', [E.NO_ENCONTRADO]: 'FFF6DEDE', [E.PENDIENTE]: 'FFEDEDED', [E.PROCESANDO]: 'FFEDEDED'
+  };
+  function estiloEncabezado(ws) {
+    const fila = ws.getRow(1);
+    fila.height = 30;
+    fila.eachCell(c => {
+      c.font = { bold: true, color: { argb: 'FFFFFFFF' }, name: 'Calibri', size: 11 };
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1B2D4A' } };
+      c.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      c.border = { bottom: { style: 'medium', color: { argb: 'FFB3262E' } } };
+    });
+    ws.views = [{ state: 'frozen', ySplit: 1 }];
+    ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: ws.columnCount } };
+  }
+  function enlace(celda, url) {
+    if (!url) { celda.value = ''; return; }
+    celda.value = { text: url, hyperlink: url };
+    celda.font = { color: { argb: 'FF1F5F9B' }, underline: true };
+  }
+  const bordeFino = { top: { style: 'thin', color: { argb: 'FFD5DAE1' } }, bottom: { style: 'thin', color: { argb: 'FFD5DAE1' } } };
+
+  /* --------------------------- Plantilla --------------------------- */
+  async function descargarPlantilla() {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Libros');
+    ws.columns = [
+      { header: 'ISBN-13', key: 'i13', width: 18 }, { header: 'ISBN-10', key: 'i10', width: 14 },
+      { header: 'Título', key: 't', width: 40 }, { header: 'Autor', key: 'a', width: 28 },
+      { header: 'Editorial', key: 'e', width: 24 }, { header: 'Año', key: 'y', width: 8 }
+    ];
+    ws.getColumn(1).numFmt = '@'; ws.getColumn(2).numFmt = '@';
+    ws.addRow({ i13: '', i10: '', t: '(Escriba aquí el título si no tiene ISBN)', a: '', e: '', y: '' });
+    estiloEncabezado(ws);
+    const buf = await wb.xlsx.writeBuffer();
+    U.descargar(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), 'plantilla_buscador_bibliografico.xlsx');
+  }
+
+  /* --------------------------- Exportación ------------------------- */
+  async function exportar(registros, alAvanzar = () => {}) {
+    if (!window.ExcelJS) throw new Error('No se pudo cargar la biblioteca de Excel (se requiere conexión a Internet).');
+    const R = BB.Results, CX = BB.CONFIG.excel;
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Buscador Bibliográfico y de Portadas';
+    wb.created = new Date();
+
+    // --- Hoja 1: Resultados ---
+    const ws = wb.addWorksheet('Resultados');
+    ws.columns = [
+      { header: 'Estado', width: 22 }, { header: 'Portada', width: 11 }, { header: 'Título', width: 38 },
+      { header: 'Autor', width: 26 }, { header: 'Editorial', width: 24 }, { header: 'ISBN-10', width: 13 },
+      { header: 'ISBN-13', width: 16 }, { header: 'Año', width: 7 }, { header: 'Fuente', width: 14 },
+      { header: 'Confianza', width: 11 }, { header: 'URL de fuente', width: 34 }, { header: 'URL de portada', width: 34 },
+      { header: 'Observaciones', width: 60 },
+      { header: 'N.º registro', width: 10 }, { header: 'Origen', width: 20 },
+      { header: 'Solicitado: ISBN', width: 16 }, { header: 'Solicitado: Título', width: 30 },
+      { header: 'Solicitado: Autor', width: 22 }, { header: 'Solicitado: Editorial', width: 20 },
+      { header: 'Solicitado: Año', width: 10 }, { header: 'Validación', width: 22 }
+    ];
+    estiloEncabezado(ws);
+    ws.getColumn(6).numFmt = '@'; ws.getColumn(7).numFmt = '@'; ws.getColumn(16).numFmt = '@';
+
+    const conImagen = [];
+    registros.forEach(reg => {
+      const c = R.seleccionado(reg), p = R.portadaDe(reg), e = reg.entrada;
+      const fila = ws.addRow([
+        reg.estado, '', c ? c.obra.titulo : '', c ? c.obra.autores.join('; ') : '', c ? c.edicion.editorial : '',
+        c ? c.edicion.isbn10 : '', c ? c.edicion.isbn13 : '', c ? c.edicion.anio : '', c ? c.fuente : '',
+        c ? c.ev.score / 100 : '', '', '', R.observaciones(reg).join(' | '),
+        reg.num, U.limpio(e.fila), U.limpio(e.isbn), U.limpio(e.titulo), U.limpio(e.autor), U.limpio(e.editorial), U.limpio(e.anio),
+        reg.validadoManual ? `Manual (${U.fechaLegible(reg.validadoManual)})` : 'Automática'
+      ]);
+      fila.height = p ? CX.altoFila : 30;
+      fila.eachCell({ includeEmpty: true }, cell => { cell.alignment = { vertical: 'top', wrapText: true }; cell.border = bordeFino; });
+      fila.getCell(10).numFmt = '0%';
+      fila.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_ESTADO[reg.estado] || 'FFFFFFFF' } };
+      fila.getCell(1).font = { bold: true };
+      enlace(fila.getCell(11), c ? c.urlFuente : '');
+      enlace(fila.getCell(12), p ? p.url : '');
+      fila.getCell(2).alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      if (p) conImagen.push({ fila, url: p.url }); else fila.getCell(2).value = 'Sin portada';
+    });
+
+    // Insertar imágenes (con concurrencia limitada)
+    let hechas = 0, fallidas = 0, idx = 0;
+    const trabajador = async () => {
+      while (idx < conImagen.length) {
+        const item = conImagen[idx++];
+        const img = await BB.Covers.aBase64(item.url);
+        if (img) {
+          const id = wb.addImage({ base64: img.base64, extension: 'jpeg' });
+          const alto = CX.altoImagen, ancho = Math.round(img.w * (alto / img.h));
+          ws.addImage(id, { tl: { col: 1.08, row: item.fila.number - 1 + 0.06 }, ext: { width: Math.min(ancho, 76), height: alto }, editAs: 'oneCell' });
+        } else {
+          fallidas++;
+          item.fila.getCell(2).value = 'Imagen no insertable (ver URL)';
+          item.fila.getCell(2).font = { size: 8, color: { argb: 'FF666666' } };
+        }
+        hechas++; alAvanzar(`Insertando portadas: ${hechas} de ${conImagen.length}`);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(CX.concurrenciaImagenes, conImagen.length) }, trabajador));
+
+    // --- Hoja 2: Fuentes ---
+    const wf = wb.addWorksheet('Fuentes');
+    wf.columns = [
+      { header: 'N.º registro', width: 10 }, { header: 'Título solicitado / ISBN', width: 36 },
+      { header: 'Fuente consultada', width: 18 }, { header: 'Tipo de consulta', width: 16 },
+      { header: 'Resultado de la consulta', width: 34 }, { header: 'Fecha de consulta', width: 18 },
+      { header: 'Fuente del resultado elegido', width: 20 }, { header: 'URL de fuente', width: 40 },
+      { header: 'URL de portada', width: 40 }, { header: 'Nivel de la portada', width: 16 }
+    ];
+    estiloEncabezado(wf);
+    registros.forEach(reg => {
+      const c = R.seleccionado(reg), p = R.portadaDe(reg);
+      const ref = U.limpio(reg.entrada.titulo) || U.limpio(reg.entrada.isbn);
+      const consultas = reg.consultas && reg.consultas.length ? reg.consultas : [{ fuente: '', tipo: '', resultado: 'Sin consultas', fecha: '' }];
+      consultas.forEach(q => {
+        const f = wf.addRow([reg.num, ref, q.fuente, q.tipo, q.resultado, q.fecha ? U.fechaLegible(q.fecha) : '',
+          c ? c.fuente : '', '', '', p ? (p.nivel || 'edición') : 'sin portada']);
+        f.eachCell({ includeEmpty: true }, cell => { cell.alignment = { vertical: 'top', wrapText: true }; cell.border = bordeFino; });
+        enlace(f.getCell(8), c ? c.urlFuente : '');
+        enlace(f.getCell(9), p ? p.url : '');
+      });
+    });
+
+    // --- Hoja 3: Revisión ---
+    const wr = wb.addWorksheet('Revisión');
+    wr.columns = [
+      { header: 'N.º registro', width: 10 }, { header: 'Estado', width: 22 }, { header: 'Motivo', width: 44 },
+      { header: 'Solicitado: ISBN', width: 16 }, { header: 'Solicitado: Título', width: 32 }, { header: 'Solicitado: Autor', width: 22 },
+      { header: 'Solicitado: Editorial', width: 20 }, { header: 'Solicitado: Año', width: 10 },
+      { header: 'Mejor candidato: Título', width: 32 }, { header: 'Mejor candidato: Editorial', width: 22 },
+      { header: 'Mejor candidato: Año', width: 10 }, { header: 'Mejor candidato: ISBN-13', width: 16 },
+      { header: 'Fuente', width: 14 }, { header: 'Confianza', width: 10 }, { header: 'Candidatos', width: 10 },
+      { header: 'Observaciones', width: 60 }, { header: 'Acción sugerida', width: 40 }
+    ];
+    estiloEncabezado(wr);
+    wr.getColumn(4).numFmt = '@'; wr.getColumn(12).numFmt = '@';
+    const ACCION = {
+      [E.PROBABLE]: 'Confirmar edición con el ejemplar físico (ISBN, editorial, año)',
+      [E.DIFERENTE]: 'Verificar si el ejemplar es otra edición; buscar por ISBN del ejemplar',
+      [E.REVISION]: 'Elegir manualmente entre las ediciones plausibles',
+      [E.NO_ENCONTRADO]: 'Revisar la captura o consultar un catálogo institucional'
+    };
+    registros.filter(r => !r.validadoManual && ACCION[r.estado]).forEach(reg => {
+      const c = R.seleccionado(reg), e = reg.entrada;
+      const f = wr.addRow([reg.num, reg.estado, reg.motivo || '', U.limpio(e.isbn), U.limpio(e.titulo), U.limpio(e.autor),
+        U.limpio(e.editorial), U.limpio(e.anio), c ? c.obra.titulo : '', c ? c.edicion.editorial : '', c ? c.edicion.anio : '',
+        c ? c.edicion.isbn13 : '', c ? c.fuente : '', c ? c.ev.score / 100 : '', (reg.candidatos || []).length,
+        R.observaciones(reg).join(' | '), ACCION[reg.estado]]);
+      f.eachCell({ includeEmpty: true }, cell => { cell.alignment = { vertical: 'top', wrapText: true }; cell.border = bordeFino; });
+      f.getCell(14).numFmt = '0%';
+      f.getCell(2).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_ESTADO[reg.estado] || 'FFFFFFFF' } };
+      f.getCell(2).font = { bold: true };
+    });
+
+    alAvanzar('Generando archivo…');
+    const buf = await wb.xlsx.writeBuffer();
+    const fecha = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
+    U.descargar(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `buscador_bibliografico_${fecha}.xlsx`);
+    return { total: registros.length, imagenes: conImagen.length - fallidas, fallidas };
+  }
+
+  return { leerArchivo, mapearEncabezados, registroDesdeCeldas, descargarPlantilla, exportar, parsearCSV };
+})();
+</script>
+<script>
+/* ==================== js/app.js ==================== */
+/* =====================================================================
+   js/app.js — Controlador de la interfaz
+   ===================================================================== */
+(() => {
+  const U = BB.Utils, E = BB.ESTADOS, R = BB.Results, S = BB.Results.S;
+  const $ = id => document.getElementById(id);
+  let modo = 'isbn13';
+  let loteActual = null;
+
+  /* ------------------------------ Avisos ----------------------------- */
+  let tAviso = null;
+  function avisar(texto, tipo = 'info') {
+    const a = $('aviso');
+    a.textContent = texto; a.className = `aviso visible ${tipo}`;
+    clearTimeout(tAviso);
+    tAviso = setTimeout(() => { a.className = 'aviso'; }, 5000);
+  }
+
+  /* ------------------------ Registros y duplicados ------------------- */
+  function claveDuplicado(e) {
+    const a = e.isbn ? BB.ISBN.analizar(e.isbn) : null;
+    if (a && a.valido) return 'isbn:' + (a.isbn13 || a.normal);
+    const t = U.normalizarTexto(e.titulo);
+    return t ? `t:${t}|${U.normalizarTexto(e.autor)}|${U.normalizarTexto(e.editorial)}|${U.extraerAnio(e.anio)}` : '';
+  }
+
+  function crearRegistros(entradas) {
+    const indice = new Map(S.registros.map(r => [claveDuplicado(r.entrada), r.num]));
+    return entradas.map(entrada => {
+      const reg = { id: U.uid('r'), num: S.siguiente++, entrada, estado: E.PENDIENTE, candidatos: null, obsEntrada: [] };
+      const k = claveDuplicado(entrada);
+      if (k && indice.has(k)) reg.duplicadoDe = indice.get(k); else if (k) indice.set(k, reg.num);
+      return reg;
+    });
+  }
+
+  /* ------------------------------ Progreso --------------------------- */
+  function mostrarProgreso(lote) {
+    $('progreso').hidden = false;
+    $('txtProgreso').textContent = `${lote.hechos} de ${lote.total} procesados`;
+    $('barraProgreso').style.width = `${lote.total ? (lote.hechos / lote.total) * 100 : 0}%`;
+    $('btnPausa').textContent = lote.pausado ? 'Reanudar' : 'Pausar';
+  }
+
+  async function procesar(registros) {
+    if (!BB.Fuentes.activas().length) { avisar('Active al menos una fuente en Configuración.', 'error'); return; }
+    if (loteActual && !loteActual.cancelado && loteActual.hechos < loteActual.total) {
+      avisar('Espere a que termine el lote en curso o cancélelo.', 'error'); return;
+    }
+    S.registros.push(...registros);
+    R.render();
+    const lote = BB.Search.crearLote(registros, l => { mostrarProgreso(l); R.programarRender(); });
+    loteActual = lote;
+    mostrarProgreso(lote);
+    $('panelLote').classList.add('ocupado');
+    await lote.promesa;
+    if (lote.cancelado) registros.filter(r => r.estado === E.PROCESANDO).forEach(r => { r.estado = E.PENDIENTE; });
+    $('panelLote').classList.remove('ocupado');
+    R.render();
+    const c = R.contar();
+    $('txtProgreso').textContent = lote.cancelado
+      ? `Cancelado: ${lote.hechos} de ${lote.total} procesados`
+      : `Listo: ${lote.hechos} de ${lote.total} procesados · ${c[E.CONFIRMADO]} confirmados`;
+    $('btnPausa').hidden = true; $('btnCancelar').hidden = true;
+    setTimeout(() => { if (loteActual === lote) { $('progreso').hidden = true; $('btnPausa').hidden = false; $('btnCancelar').hidden = false; } }, 6000);
+  }
+
+  /* -------------------------- Búsqueda individual -------------------- */
+  function actualizarModo(nuevo) {
+    modo = nuevo;
+    document.querySelectorAll('#modo button').forEach(b => {
+      const activo = b.dataset.modo === modo;
+      b.classList.toggle('activo', activo); b.setAttribute('aria-checked', activo);
+    });
+    const esTitulo = modo === 'titulo';
+    $('lblPrincipal').textContent = esTitulo ? 'Título de la obra' : (modo === 'isbn10' ? 'ISBN-10' : 'ISBN-13');
+    $('campoPrincipal').placeholder = esTitulo ? 'Ej.: El llano en llamas' : (modo === 'isbn10' ? 'Ej.: 0-14-032872-X' : 'Ej.: 978-607-…');
+    $('campoPrincipal').inputMode = esTitulo ? 'text' : 'numeric';
+    $('grupoTituloSec').hidden = esTitulo;
+    $('leyendaSec').textContent = esTitulo ? 'Datos secundarios (opcionales)' : 'Datos para contrastar la edición (opcionales)';
+    validarEnVivo();
+  }
+
+  function validarEnVivo() {
+    const ayuda = $('ayudaISBN'), v = $('campoPrincipal').value;
+    ayuda.className = 'ayuda';
+    if (modo === 'titulo' || !v.trim()) { ayuda.textContent = modo === 'titulo' ? '' : 'Se aceptan guiones y espacios; se eliminan al normalizar.'; return; }
+    const a = BB.ISBN.analizar(v);
+    if (a.valido) {
+      if ((modo === 'isbn10' && a.tipo === 'ISBN-13') || (modo === 'isbn13' && a.tipo === 'ISBN-10')) {
+        actualizarModo(a.tipo === 'ISBN-13' ? 'isbn13' : 'isbn10'); return;
+      }
+      ayuda.classList.add('ok');
+      ayuda.textContent = a.tipo === 'ISBN-10'
+        ? `ISBN-10 válido. Equivale a ISBN-13 ${a.isbn13}.`
+        : (a.isbn10 ? `ISBN-13 válido. Equivale a ISBN-10 ${a.isbn10}.` : 'ISBN-13 válido (prefijo 979: no tiene equivalente ISBN-10).');
+    } else if (a.normal.length >= 10) {
+      ayuda.classList.add('error'); ayuda.textContent = a.error;
+    } else {
+      ayuda.textContent = `${a.normal.length} de ${modo === 'isbn10' ? 10 : 13} caracteres.`;
+    }
+  }
+
+  function buscarIndividual() {
+    const principal = $('campoPrincipal').value.trim();
+    if (!principal) { avisar(modo === 'titulo' ? 'Escriba el título de la obra.' : 'Escriba el ISBN.', 'error'); $('campoPrincipal').focus(); return; }
+    const entrada = {
+      isbn: modo === 'titulo' ? '' : principal,
+      titulo: modo === 'titulo' ? principal : $('campoTituloSec').value.trim(),
+      autor: $('campoAutor').value.trim(), editorial: $('campoEditorial').value.trim(), anio: $('campoAnio').value.trim(),
+      fila: 'Búsqueda individual'
+    };
+    if (entrada.isbn && !BB.ISBN.analizar(entrada.isbn).valido && !entrada.titulo) {
+      avisar('El ISBN no es válido. Se registrará para revisión; agregue el título para buscar por obra.', 'error');
+    }
+    const regs = crearRegistros([entrada]);
+    S.abiertos.add(regs[0].id);
+    procesar(regs);
+  }
+
+  function limpiarFormulario() {
+    ['campoPrincipal', 'campoTituloSec', 'campoAutor', 'campoEditorial', 'campoAnio'].forEach(id => { $(id).value = ''; });
+    validarEnVivo();
+    $('campoPrincipal').focus();
+  }
+
+  /* ------------------------------ Lote ------------------------------- */
+  const pareceCodigo = s => BB.ISBN.pareceISBN(s) || /^[\dxX][\d\s\-xX]{8,16}$/.test(U.limpio(s));
+
+  function parsearLista(texto) {
+    const lineas = texto.split(/\r?\n/).map(l => l.replace(/\s+$/, '')).filter(l => l.trim());
+    if (!lineas.length) return [];
+    const sep = lineas[0].includes('\t') ? '\t' : (lineas.some(l => l.includes('|')) ? '|' : null);
+    const filas = lineas.map((l, i) => ({ celdas: sep ? l.split(sep).map(s => s.trim()) : [l.trim()], n: i + 1 }));
+    if (sep) {
+      const mapa = BB.Excel.mapearEncabezados(filas[0].celdas);
+      if (mapa) return filas.slice(1).map(f => BB.Excel.registroDesdeCeldas(f.celdas, mapa, `Lista línea ${f.n}`)).filter(r => r.isbn || r.titulo);
+    }
+    return filas.map(f => {
+      const c = f.celdas, fila = `Lista línea ${f.n}`;
+      if (c.length === 1) return pareceCodigo(c[0]) ? { isbn: c[0], fila } : { titulo: c[0], fila };
+      if (pareceCodigo(c[0])) return { isbn: c[0], titulo: c[1] || '', autor: c[2] || '', editorial: c[3] || '', anio: c[4] || '', fila };
+      return { titulo: c[0], autor: c[1] || '', editorial: c[2] || '', anio: c[3] || '', fila };
+    });
+  }
+
+  function vistaPreviaLista() {
+    const n = parsearLista($('areaLote').value).length;
+    $('infoLote').textContent = n ? `${n} registro(s) detectados.` : '';
+  }
+
+  function procesarEntradas(entradas, origen) {
+    if (!entradas.length) { avisar('No se detectaron registros con ISBN o título.', 'error'); return; }
+    const regs = crearRegistros(entradas);
+    const dup = regs.filter(r => r.duplicadoDe).length;
+    $('infoLote').textContent = `${origen}: ${regs.length} registro(s)${dup ? `, ${dup} duplicado(s) (se consultan una sola vez)` : ''}.`;
+    procesar(regs);
+  }
+
+  async function importarArchivo(file) {
+    if (!file) return;
+    try {
+      $('infoLote').textContent = `Leyendo ${file.name}…`;
+      const entradas = await BB.Excel.leerArchivo(file);
+      procesarEntradas(entradas, file.name);
+    } catch (e) {
+      $('infoLote').textContent = '';
+      avisar(e.message, 'error');
+    } finally {
+      $('archivoLote').value = '';
+    }
+  }
+
+  /* ------------------------- Acciones en la tabla --------------------- */
+  function registroDe(el) {
+    const tr = el.closest('tr[data-id]');
+    return tr ? S.registros.find(r => r.id === tr.dataset.id) : null;
+  }
+
+  async function accionTabla(ev) {
+    const btn = ev.target.closest('[data-accion]');
+    if (!btn || btn.tagName === 'SELECT') return;
+    const reg = registroDe(btn);
+    if (!reg) return;
+    const accion = btn.dataset.accion;
+
+    if (accion === 'detalle') {
+      if (S.abiertos.has(reg.id)) S.abiertos.delete(reg.id);
+      else {
+        S.abiertos.add(reg.id);
+        BB.Search.verificarPortadas(reg, reg.candidatos.length).then(() => R.programarRender(50));
+      }
+      R.render();
+    } else if (accion === 'reintentar') {
+      procesar([reg].map(r => { S.registros.splice(S.registros.indexOf(r), 1); return r; }));
+    } else if (accion === 'ver-portada') {
+      abrirModal(reg);
+    } else if (accion === 'elegir') {
+      reg.seleccion = btn.dataset.cand; reg.seleccionManual = true; reg.validadoManual = ''; reg.portadaManual = null;
+      BB.Search.reevaluar(reg);
+      await BB.Search.verificarPortadas(reg, 0);
+      R.render();
+    } else if (accion === 'confirmar') {
+      reg.validadoManual = U.fechaISO(); reg.marcadoNoEncontrado = false; reg.seleccionManual = true;
+      BB.Search.reevaluar(reg); R.render(); avisar(`Registro n.º ${reg.num} confirmado manualmente.`);
+    } else if (accion === 'deshacer') {
+      reg.validadoManual = ''; BB.Search.reevaluar(reg); R.render();
+    } else if (accion === 'no-encontrado') {
+      reg.marcadoNoEncontrado = true; reg.validadoManual = ''; BB.Search.reevaluar(reg); R.render();
+    } else if (accion === 'usar-portada') {
+      const k = reg.candidatos.find(c => c.id === btn.dataset.cand), sel = R.seleccionado(reg);
+      const misma = sel && sel.edicion.isbn13 && k.edicion.isbns13.includes(sel.edicion.isbn13);
+      reg.portadaManual = (k === sel) ? null : {
+        url: k.edicion.portadaUrl, fuente: k.fuente, nivel: misma ? 'edición' : 'otra edición',
+        nota: misma
+          ? `Portada elegida manualmente (misma edición, ${k.fuente})`
+          : `Portada elegida manualmente de OTRA edición (${k.fuente}: ${k.edicion.editorial || 's/ed.'} ${k.edicion.anio || 's/a.'}); no corresponde con certeza a la edición registrada`
+      };
+      BB.Search.verificarPortadas(reg, 0).then(() => R.render());
+    }
+  }
+
+  /* ------------------------------ Modal ------------------------------ */
+  function abrirModal(reg) {
+    const p = R.portadaDe(reg), c = R.seleccionado(reg);
+    if (!p) return;
+    $('modalImg').src = BB.Covers.urlGrande(p.url);
+    $('modalImg').onerror = () => { $('modalImg').onerror = null; $('modalImg').src = p.url; };
+    $('modalTitulo').textContent = c ? c.obra.titulo : '';
+    $('modalPie').innerHTML = `Fuente de la portada: ${U.esc(p.fuente)}. Asociada a: ${U.esc(p.nivel || 'edición')}.<br><a href="${U.esc(p.url)}" target="_blank" rel="noopener">Abrir URL de la portada</a>`;
+    $('modal').hidden = false;
+    $('modalCerrar').focus();
+  }
+  const cerrarModal = () => { $('modal').hidden = true; $('modalImg').src = ''; };
+
+  /* --------------------------- Configuración ------------------------- */
+  function cargarConfiguracion() {
+    const C = BB.CONFIG;
+    $('cfgOL').checked = C.fuentes.openLibrary.activa;
+    $('cfgGB').checked = C.fuentes.googleBooks.activa;
+    $('cfgConc').value = C.red.concurrencia;
+    Object.entries(C.pesos).forEach(([k, v]) => { $('peso_' + k).value = v; });
+    pintarFuentes();
+  }
+  function aplicarConfiguracion() {
+    const C = BB.CONFIG;
+    C.fuentes.openLibrary.activa = $('cfgOL').checked;
+    C.fuentes.googleBooks.activa = $('cfgGB').checked;
+    C.fuentes.googleBooks.apiKey = $('cfgKey').value.trim();
+    C.red.concurrencia = Math.max(1, Math.min(6, parseInt($('cfgConc').value, 10) || 3));
+    Object.keys(C.pesos).forEach(k => { const n = parseFloat($('peso_' + k).value); C.pesos[k] = isFinite(n) && n >= 0 ? n : C.pesos[k]; });
+    S.registros.forEach(r => { if (r.candidatos) { BB.Search.reevaluar(r); } });
+    pintarFuentes();
+    R.render();
+    avisar('Configuración aplicada y resultados recalculados.');
+  }
+  function pintarFuentes() {
+    $('fuentesActivas').innerHTML = BB.Fuentes.todas().map(f =>
+      `<span class="fuente-chip${f.activa() ? '' : ' inactiva'}">${U.esc(f.nombre)}</span>`).join('');
+  }
+
+  /* ----------------------------- Exportar ---------------------------- */
+  async function exportar() {
+    const lista = S.registros.filter(r => r.estado !== E.PENDIENTE && r.estado !== E.PROCESANDO);
+    if (!lista.length) return;
+    const b = $('btnExportar');
+    b.disabled = true;
+    const original = b.textContent;
+    try {
+      const r = await BB.Excel.exportar(lista.sort((a, c) => a.num - c.num), t => { b.textContent = t; });
+      avisar(`Excel generado: ${r.total} registros, ${r.imagenes} portadas insertadas` +
+        (r.fallidas ? `; ${r.fallidas} no se pudieron insertar (el servidor de imágenes no lo permite), pero su URL se conserva.` : '.'));
+    } catch (e) {
+      avisar('No se pudo generar el Excel: ' + e.message, 'error');
+    } finally {
+      b.textContent = original; b.disabled = false;
+    }
+  }
+
+  /* ------------------------------ Eventos ---------------------------- */
+  function iniciar() {
+    document.querySelectorAll('#modo button').forEach(b => b.addEventListener('click', () => { actualizarModo(b.dataset.modo); $('campoPrincipal').focus(); }));
+    $('campoPrincipal').addEventListener('input', validarEnVivo);
+    $('formIndividual').addEventListener('submit', ev => { ev.preventDefault(); buscarIndividual(); });
+    $('btnLimpiar').addEventListener('click', limpiarFormulario);
+
+    $('areaLote').addEventListener('input', vistaPreviaLista);
+    $('btnLote').addEventListener('click', () => procesarEntradas(parsearLista($('areaLote').value), 'Lista pegada'));
+    $('archivoLote').addEventListener('change', e => importarArchivo(e.target.files[0]));
+    const zona = $('zonaArchivo');
+    ['dragenter', 'dragover'].forEach(t => zona.addEventListener(t, e => { e.preventDefault(); zona.classList.add('encima'); }));
+    ['dragleave', 'drop'].forEach(t => zona.addEventListener(t, e => { e.preventDefault(); zona.classList.remove('encima'); }));
+    zona.addEventListener('drop', e => importarArchivo(e.dataTransfer.files[0]));
+    $('btnPlantilla').addEventListener('click', () => {
+      if (!window.ExcelJS) return avisar('No se pudo cargar la biblioteca de Excel (se requiere conexión).', 'error');
+      BB.Excel.descargarPlantilla();
+    });
+
+    $('btnPausa').addEventListener('click', () => { if (loteActual) { loteActual.pausado = !loteActual.pausado; mostrarProgreso(loteActual); } });
+    $('btnCancelar').addEventListener('click', () => { if (loteActual) { loteActual.cancelado = true; loteActual.pausado = false; } });
+
+    $('cuerpo').addEventListener('click', accionTabla);
+    $('cuerpo').addEventListener('change', e => {
+      if (e.target.dataset.accion === 'orden-cand') { const reg = registroDe(e.target); S.ordenCand[reg.id] = e.target.value; R.render(); }
+    });
+    $('filtros').addEventListener('click', e => { const b = e.target.closest('[data-filtro]'); if (b) { S.filtro = b.dataset.filtro; R.render(); } });
+    $('ordenTabla').addEventListener('change', e => { S.orden = e.target.value; R.render(); });
+    $('btnExportar').addEventListener('click', exportar);
+    $('btnVaciar').addEventListener('click', () => {
+      if (!S.registros.length) return;
+      if (loteActual && !loteActual.cancelado && loteActual.hechos < loteActual.total) return avisar('Cancele el lote en curso antes de vaciar.', 'error');
+      if (!confirm(`¿Quitar los ${S.registros.length} registros de la tabla? Exporte antes si los necesita.`)) return;
+      S.registros.length = 0; S.abiertos.clear(); S.siguiente = 1; R.render();
+    });
+
+    $('btnAplicarCfg').addEventListener('click', aplicarConfiguracion);
+    $('btnCache').addEventListener('click', () => { BB.Search.limpiarCache(); avisar('Caché de consultas vaciada.'); });
+
+    $('modalCerrar').addEventListener('click', cerrarModal);
+    $('modal').addEventListener('click', e => { if (e.target.id === 'modal') cerrarModal(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('modal').hidden) cerrarModal(); });
+
+    if (!window.ExcelJS) avisar('Sin la biblioteca de Excel: la búsqueda funciona, pero importar y exportar XLSX requiere conexión.', 'error');
+    cargarConfiguracion();
+    actualizarModo('isbn13');
+    R.render();
+  }
+
+  document.addEventListener('DOMContentLoaded', iniciar);
+})();
+</script>
+</body>
+</html>
