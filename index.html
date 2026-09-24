@@ -72,6 +72,9 @@
         <label class="casilla"><input type="checkbox" id="cfgGB"> Google Books</label>
         <label class="campo"><span>Clave de API de Google Books (opcional)</span>
           <input id="cfgKey" type="password" placeholder="Solo se guarda mientras la página esté abierta"></label>
+        <label class="casilla"><input type="checkbox" id="cfgUPN"> Biblioteca UPN (ediciones SEP y Libros del Rincón)</label>
+        <label class="campo"><span>Dirección del proxy para la Biblioteca UPN</span>
+          <input id="cfgUPNProxy" type="url" placeholder="https://su-proxy.workers.dev"></label>
       </fieldset>
       <fieldset><legend>Pesos del motor de coincidencia</legend>
         <div class="pesos">
@@ -151,6 +154,7 @@
 <script src="js/sources/registry.js"></script>
 <script src="js/sources/openlibrary.js"></script>
 <script src="js/sources/googlebooks.js"></script>
+<script src="js/sources/upn.js"></script>
 <script src="js/matcher.js"></script>
 <script src="js/covers.js"></script>
 <script src="js/search.js"></script>

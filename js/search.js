@@ -100,7 +100,8 @@ BB.Search = (() => {
     const cls = BB.Matcher.clasificar(reg.req, reg.candidatos, forzado);
     reg.estadoAuto = cls.estado;
     reg.motivo = cls.motivo;
-    if (reg.validadoManual) reg.estado = E.CONFIRMADO;
+    // Validar a mano confirma la obra; si la edición es distinta, el estado lo sigue diciendo.
+    if (reg.validadoManual) reg.estado = cls.estado === E.DIFERENTE ? E.DIFERENTE : E.CONFIRMADO;
     else if (reg.marcadoNoEncontrado) reg.estado = E.NO_ENCONTRADO;
     else reg.estado = cls.estado;
   }
@@ -187,7 +188,10 @@ BB.Search = (() => {
     return lote;
   }
 
-  return { procesarRegistro, crearLote, reevaluar, verificarPortadas, construirSolicitud,
+  /** Milisegundos que faltan para que termine la pausa por límite de solicitudes más larga (0 si no hay). */
+  const esperaPendienteMs = () => Math.max(0, ...Array.from(enfriamiento.values(), h => h - Date.now()));
+
+  return { procesarRegistro, crearLote, reevaluar, verificarPortadas, construirSolicitud, esperaPendienteMs,
     buscarPorISBN, buscarPorTitulo, buscarPorTituloAutor, consultarOpenLibrary, consultarGoogleBooks,
     limpiarCache: () => { cache.clear(); enfriamiento.clear(); } };
 })();

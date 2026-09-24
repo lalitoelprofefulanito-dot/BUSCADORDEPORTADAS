@@ -341,6 +341,9 @@ td.parcial .solicitado { color: var(--med); }
         <label class="casilla"><input type="checkbox" id="cfgGB"> Google Books</label>
         <label class="campo"><span>Clave de API de Google Books (opcional)</span>
           <input id="cfgKey" type="password" placeholder="Solo se guarda mientras la página esté abierta"></label>
+        <label class="casilla"><input type="checkbox" id="cfgUPN"> Biblioteca UPN (ediciones SEP y Libros del Rincón)</label>
+        <label class="campo"><span>Dirección del proxy para la Biblioteca UPN</span>
+          <input id="cfgUPNProxy" type="url" placeholder="https://su-proxy.workers.dev"></label>
       </fieldset>
       <fieldset><legend>Pesos del motor de coincidencia</legend>
         <div class="pesos">
@@ -434,16 +437,28 @@ BB.CONFIG = {
     margenAmbiguedad: 6,   // diferencia de puntos que vuelve ambiguas dos ediciones
     tituloObra: 0.75,      // similitud de título para considerar la misma obra
     autorObra: 0.6,        // similitud de autor para considerar la misma obra
-    editorialEdicion: 0.75 // similitud de editorial para considerar la misma edición
+    editorialEdicion: 0.75, // similitud de editorial para considerar la misma edición
+    tituloSoloPalabras: 3,  // búsqueda solo por título: palabras significativas mínimas para aspirar a PROBABLE
+    tituloSoloSimilitud: 0.95 // búsqueda solo por título: similitud mínima del título para aspirar a PROBABLE
+  },
+
+  // Procedencia esperada del acervo (Biblioteca Viva: ediciones mexicanas y de la SEP).
+  // Si no se aporta ISBN, un resultado con ISBN de otro país baja de confianza; la autoedición va a revisión.
+  procedencia: {
+    prefijosISBN: ['978607', '978968', '978970'], // México; deje la lista vacía para desactivar
+    factorFueraDeRegion: 0.85,
+    autoedicion: 'independently published|createspace|autoedici|self[ -]?published'
   },
 
   // Control de red para procesamiento masivo
-  red: { concurrencia: 3, pausaMs: 300, timeoutMs: 12000, reintentos: 2, backoffMs: 1500 },
+  red: { concurrencia: 3, pausaMs: 300, timeoutMs: 12000, reintentos: 2, backoffMs: 1500, segundaPasada: true },
 
   // Fuentes bibliográficas
   fuentes: {
     openLibrary: { activa: true, maxObras: 3, maxEdicionesPorObra: 40 },
-    googleBooks: { activa: true, maxResultados: 20, apiKey: '' } // clave opcional, solo en memoria
+    googleBooks: { activa: true, maxResultados: 20, apiKey: '' }, // clave opcional, solo en memoria
+    // Biblioteca UPN «Gregorio Torres Quintero» (Koha). No permite CORS: requiere el proxy de proxy/upn-proxy-worker.js
+    upn: { activa: false, proxy: '', maxRegistros: 5 }
   },
 
   // Portadas
@@ -513,7 +528,7 @@ BB.Utils = (() => {
 
   /**
    * fetch con tiempo límite, reintentos y retroceso ante 429/5xx/red.
-   * Devuelve JSON, o null si HTTP 404. Lanza Error con .code en otros casos.
+   * Devuelve JSON (o texto si opciones.texto), o null si HTTP 404. Lanza Error con .code en otros casos.
    */
   async function fetchJSON(url, opciones = {}) {
     const cfg = Object.assign({}, BB.CONFIG.red, opciones);
@@ -530,7 +545,7 @@ BB.Utils = (() => {
           e.code = r.status === 429 ? 'LIMITE' : 'HTTP'; e.reintentar = true; throw e;
         }
         if (!r.ok) { const e = new Error(`La fuente rechazó la consulta (HTTP ${r.status})`); e.code = 'HTTP'; throw e; }
-        return await r.json();
+        return cfg.texto ? await r.text() : await r.json();
       } catch (err) {
         clearTimeout(t);
         let e = err;
@@ -553,7 +568,9 @@ BB.Utils = (() => {
     setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1500);
   }
 
-  return { limpio, normalizarTexto, tokens, extraerAnio, esperar, esc, uid, fechaISO, fechaLegible, fetchJSON, descargar };
+  const fetchTexto = (url, opciones = {}) => fetchJSON(url, Object.assign({}, opciones, { texto: true }));
+
+  return { limpio, normalizarTexto, tokens, extraerAnio, esperar, esc, uid, fechaISO, fechaLegible, fetchJSON, fetchTexto, descargar };
 })();
 </script>
 <script>
@@ -857,6 +874,81 @@ BB.Fuentes = (() => {
 })();
 </script>
 <script>
+/* ==================== js/sources/upn.js ==================== */
+/* =====================================================================
+   js/sources/upn.js — Adaptador Biblioteca UPN «Gregorio Torres Quintero» (Koha)
+   El catálogo (sibi.upn.mx) no permite consultas directas desde el navegador (CORS),
+   así que se consulta a través del proxy de proxy/upn-proxy-worker.js.
+   ISBN:   opac-search.pl?idx=nb&q=…  → números de registro → ficha MARCXML
+   Título: opac-search.pl?idx=ti&q=… → números de registro → ficha MARCXML
+   ===================================================================== */
+(() => {
+  const BASE = 'https://sibi.upn.mx/cgi-bin/koha';
+  const cfg = () => BB.CONFIG.fuentes.upn;
+  const via = url => `${cfg().proxy.replace(/\/+$/, '')}/?u=${encodeURIComponent(url)}`;
+
+  /** Números de registro (biblionumber) que aparecen en una página de resultados o de detalle. */
+  function registros(html) {
+    const vistos = [];
+    (html.match(/biblionumber=(\d+)/g) || []).forEach(m => { const n = m.split('=')[1]; if (!vistos.includes(n)) vistos.push(n); });
+    return vistos.slice(0, cfg().maxRegistros);
+  }
+
+  const limpiarMarc = s => BB.Utils.limpio(s).replace(/[\s/:;,.=]+$/, '').replace(/^\[|\]$/g, '').trim();
+
+  function subcampos(doc, tag, codigos) {
+    return Array.from(doc.getElementsByTagName('datafield')).filter(f => f.getAttribute('tag') === tag).map(f =>
+      Array.from(f.getElementsByTagName('subfield')).filter(s => codigos.includes(s.getAttribute('code')))
+        .map(s => s.textContent).join(' '));
+  }
+
+  /** Primer subcampo con ese código (algunas fichas repiten el $b del título). */
+  function primero(doc, tag, codigo) {
+    const f = Array.from(doc.getElementsByTagName('datafield')).find(x => x.getAttribute('tag') === tag);
+    const s = f && Array.from(f.getElementsByTagName('subfield')).find(x => x.getAttribute('code') === codigo);
+    return s ? s.textContent : '';
+  }
+
+  async function ficha(num) {
+    const xml = await BB.Utils.fetchTexto(via(`${BASE}/opac-export.pl?op=export&bib=${num}&format=marcxml`));
+    if (!xml) return null;
+    const doc = new DOMParser().parseFromString(xml, 'application/xml');
+    const isbns = subcampos(doc, '020', ['a']).map(x => x.replace(/[^0-9Xx]/g, '')).filter(Boolean);
+    const [titulo, subtitulo] = [primero(doc, '245', 'a'), primero(doc, '245', 'b')].map(limpiarMarc);
+    const autores = subcampos(doc, '100', ['a']).concat(subcampos(doc, '110', ['a']), subcampos(doc, '700', ['a'])).map(limpiarMarc).filter(Boolean);
+    const pub = subcampos(doc, '260', ['b']).concat(subcampos(doc, '264', ['b'])).map(limpiarMarc).filter(Boolean);
+    const anio = subcampos(doc, '260', ['c']).concat(subcampos(doc, '264', ['c'])).join(' ');
+    return BB.Fuentes.crearCandidato({
+      fuente: 'Biblioteca UPN',
+      titulo, subtitulo, autores, editorial: pub, anio,
+      isbn13: isbns.filter(x => x.length === 13), isbn10: isbns.filter(x => x.length === 10),
+      urlFuente: `${BASE}/opac-detail.pl?biblionumber=${num}`, idEdicion: `upn:${num}`
+    });
+  }
+
+  async function consultar(indice, q) {
+    const html = await BB.Utils.fetchTexto(via(`${BASE}/opac-search.pl?idx=${indice}&q=${encodeURIComponent(q)}`));
+    if (!html) return [];
+    const fichas = await Promise.all(registros(html).map(n => ficha(n).catch(() => null)));
+    return fichas.filter(Boolean);
+  }
+
+  BB.Fuentes.registrar({
+    id: 'upn', nombre: 'Biblioteca UPN',
+    activa: () => cfg().activa && !!cfg().proxy,
+    // El catálogo guarda sobre todo ISBN-10 (ediciones anteriores a 2007): se prueba primero ese y luego el ISBN-13.
+    buscarPorISBN: async info => {
+      for (const q of [info.isbn10, info.isbn13].filter(Boolean)) {
+        const r = await consultar('nb', q);
+        if (r.length) return r;
+      }
+      return [];
+    },
+    buscarPorTitulo: ({ titulo, autor }) => (titulo ? consultar('kw', [titulo, autor].filter(Boolean).join(' ')) : Promise.resolve([]))
+  });
+})();
+</script>
+<script>
 /* ==================== js/matcher.js ==================== */
 /* =====================================================================
    js/matcher.js — Motor de coincidencia y clasificación
@@ -891,7 +983,10 @@ BB.Matcher = (() => {
     const sa = new Set(ta), sb = new Set(tb);
     let inter = 0; sa.forEach(t => { if (sb.has(t)) inter++; });
     const dice = (2 * inter) / (sa.size + sb.size);
-    const contencion = inter / Math.min(sa.size, sb.size);
+    // La contención vale según cuánto del texto largo cubre el corto:
+    // «Agua» dentro de «Como agua para chocolate» ya no cuenta como coincidencia fuerte.
+    const cobertura = Math.sqrt(Math.min(sa.size, sb.size) / Math.max(sa.size, sb.size));
+    const contencion = (inter / Math.min(sa.size, sb.size)) * cobertura;
     return Math.min(1, Math.max(dice, contencion * 0.9, diceBigramas(na, nb) * 0.95));
   }
 
@@ -947,7 +1042,14 @@ BB.Matcher = (() => {
     if (req.anio) det.anio = simAnio(req.anio, cand.edicion.anio);
     let num = 0, den = 0;
     Object.keys(det).forEach(k => { num += (P[k] || 0) * det[k]; den += (P[k] || 0); });
-    return { score: den ? Math.round((num / den) * 100) : 0, det };
+    let score = den ? (num / den) * 100 : 0;
+    // Procedencia: señales que no son campos ponderados, sino alertas sobre la edición encontrada.
+    const Pr = BB.CONFIG.procedencia, alertas = {};
+    if (!req.isbn && Pr.prefijosISBN.length && cand.edicion.isbn13 && !Pr.prefijosISBN.some(x => cand.edicion.isbn13.startsWith(x))) {
+      alertas.fueraRegion = true; score *= Pr.factorFueraDeRegion;
+    }
+    if (Pr.autoedicion && new RegExp(Pr.autoedicion, 'i').test(cand.edicion.editorial)) alertas.autoedicion = true;
+    return { score: Math.round(score), det, alertas };
   }
 
   /** Lista explícita de discrepancias: nunca se ocultan diferencias de ISBN, editorial o año. */
@@ -964,6 +1066,10 @@ BB.Matcher = (() => {
       obs.push(ed.editorial ? `Editorial distinta: solicitada «${req.editorial}», encontrada «${ed.editorial}»` : 'La fuente no informa editorial');
     }
     if ('anio' in d && d.anio < 1) obs.push(ed.anio ? `Año distinto: solicitado ${req.anio}, encontrado ${ed.anio}` : 'La fuente no informa año de publicación');
+    const al = (cand.ev && cand.ev.alertas) || {};
+    if (al.fueraRegion) obs.push(`Edición de otro país (ISBN ${ed.isbn13}); se esperaba una edición mexicana`);
+    if (al.autoedicion) obs.push(`Autoedición («${ed.editorial}»): casi nunca corresponde a un libro escolar`);
+    if (!req.isbn && !req.autor && !req.editorial && !req.anio) obs.push('Solo se buscó por título: sin autor, editorial ni año no se puede distinguir entre obras con títulos parecidos');
     return obs;
   }
 
@@ -997,6 +1103,15 @@ BB.Matcher = (() => {
 
     if (!req.titulo) return { estado: E.NO_ENCONTRADO, motivo: 'Datos insuficientes: falta ISBN válido o título' };
     if ((d.titulo || 0) < 0.5 || s < T.minimo) return { estado: E.NO_ENCONTRADO, motivo: 'Ningún resultado alcanza la coincidencia mínima' };
+    if (best.ev.alertas && best.ev.alertas.autoedicion) return { estado: E.REVISION, motivo: 'El mejor resultado es una autoedición; verifique que sea el mismo libro' };
+
+    if (!req.autor && !req.editorial && !req.anio) {
+      const palabras = U.tokens(req.titulo).length;
+      if (palabras < T.tituloSoloPalabras || d.titulo < T.tituloSoloSimilitud) {
+        return { estado: E.REVISION, motivo: 'Solo se dio el título y es breve o no coincide completo; agregue autor o editorial para identificar la obra' };
+      }
+      return { estado: E.PROBABLE, motivo: 'Solo se dio el título: la obra parece coincidir, pero sin autor ni editorial no se puede confirmar' };
+    }
 
     const obraOK = d.titulo >= T.tituloObra && (!req.autor || d.autor >= T.autorObra);
     const edicionDistinta = (req.editorial && d.editorial < 0.5) || (req.anio && d.anio < 0.5);
@@ -1198,7 +1313,8 @@ BB.Search = (() => {
     const cls = BB.Matcher.clasificar(reg.req, reg.candidatos, forzado);
     reg.estadoAuto = cls.estado;
     reg.motivo = cls.motivo;
-    if (reg.validadoManual) reg.estado = E.CONFIRMADO;
+    // Validar a mano confirma la obra; si la edición es distinta, el estado lo sigue diciendo.
+    if (reg.validadoManual) reg.estado = cls.estado === E.DIFERENTE ? E.DIFERENTE : E.CONFIRMADO;
     else if (reg.marcadoNoEncontrado) reg.estado = E.NO_ENCONTRADO;
     else reg.estado = cls.estado;
   }
@@ -1285,7 +1401,10 @@ BB.Search = (() => {
     return lote;
   }
 
-  return { procesarRegistro, crearLote, reevaluar, verificarPortadas, construirSolicitud,
+  /** Milisegundos que faltan para que termine la pausa por límite de solicitudes más larga (0 si no hay). */
+  const esperaPendienteMs = () => Math.max(0, ...Array.from(enfriamiento.values(), h => h - Date.now()));
+
+  return { procesarRegistro, crearLote, reevaluar, verificarPortadas, construirSolicitud, esperaPendienteMs,
     buscarPorISBN, buscarPorTitulo, buscarPorTituloAutor, consultarOpenLibrary, consultarGoogleBooks,
     limpiarCache: () => { cache.clear(); enfriamiento.clear(); } };
 })();
@@ -1874,6 +1993,24 @@ BB.Excel = (() => {
     $('btnPausa').textContent = lote.pausado ? 'Reanudar' : 'Pausar';
   }
 
+  /**
+   * Los registros que no pudieron consultar alguna fuente por límite de solicitudes (HTTP 429)
+   * se vuelven a procesar una vez, cuando termina la pausa de esa fuente.
+   */
+  async function segundaPasada(lote, registros) {
+    if (lote.cancelado || !BB.CONFIG.red.segundaPasada) return;
+    const pendientes = registros.filter(r => (r.errores || []).some(e => e.code === 'LIMITE'));
+    if (!pendientes.length) return;
+    for (let ms = BB.Search.esperaPendienteMs(); ms > 0 && !lote.cancelado; ms = BB.Search.esperaPendienteMs()) {
+      $('txtProgreso').textContent = `Una fuente pidió pausa: ${pendientes.length} registro(s) se consultarán de nuevo en ${Math.ceil(ms / 1000)} s`;
+      await U.esperar(Math.min(ms, 1000));
+    }
+    if (lote.cancelado) return;
+    const repaso = BB.Search.crearLote(pendientes, l => { $('txtProgreso').textContent = `Segunda pasada: ${l.hechos} de ${l.total}`; R.programarRender(); });
+    lote.repaso = repaso;
+    await repaso.promesa;
+  }
+
   async function procesar(registros) {
     if (!BB.Fuentes.activas().length) { avisar('Active al menos una fuente en Configuración.', 'error'); return; }
     if (loteActual && !loteActual.cancelado && loteActual.hechos < loteActual.total) {
@@ -1886,6 +2023,7 @@ BB.Excel = (() => {
     mostrarProgreso(lote);
     $('panelLote').classList.add('ocupado');
     await lote.promesa;
+    await segundaPasada(lote, registros);
     if (lote.cancelado) registros.filter(r => r.estado === E.PROCESANDO).forEach(r => { r.estado = E.PENDIENTE; });
     $('panelLote').classList.remove('ocupado');
     R.render();
@@ -2033,6 +2171,13 @@ BB.Excel = (() => {
       await BB.Search.verificarPortadas(reg, 0);
       R.render();
     } else if (accion === 'confirmar') {
+      if (reg.estadoAuto !== E.CONFIRMADO) {
+        const sel = R.seleccionado(reg), dif = sel ? BB.Matcher.discrepancias(reg.req, sel) : [];
+        const aviso = `El resultado automático es «${reg.estadoAuto}»: ${reg.motivo || ''}` +
+          (dif.length ? `\n\n• ${dif.join('\n• ')}` : '') +
+          '\n\n¿Confirma que este resultado corresponde al libro buscado?';
+        if (!confirm(aviso)) return;
+      }
       reg.validadoManual = U.fechaISO(); reg.marcadoNoEncontrado = false; reg.seleccionManual = true;
       BB.Search.reevaluar(reg); R.render(); avisar(`Registro n.º ${reg.num} confirmado manualmente.`);
     } else if (accion === 'deshacer') {
@@ -2070,6 +2215,8 @@ BB.Excel = (() => {
     const C = BB.CONFIG;
     $('cfgOL').checked = C.fuentes.openLibrary.activa;
     $('cfgGB').checked = C.fuentes.googleBooks.activa;
+    $('cfgUPN').checked = C.fuentes.upn.activa;
+    $('cfgUPNProxy').value = C.fuentes.upn.proxy;
     $('cfgConc').value = C.red.concurrencia;
     Object.entries(C.pesos).forEach(([k, v]) => { $('peso_' + k).value = v; });
     pintarFuentes();
@@ -2079,6 +2226,9 @@ BB.Excel = (() => {
     C.fuentes.openLibrary.activa = $('cfgOL').checked;
     C.fuentes.googleBooks.activa = $('cfgGB').checked;
     C.fuentes.googleBooks.apiKey = $('cfgKey').value.trim();
+    C.fuentes.upn.proxy = $('cfgUPNProxy').value.trim();
+    C.fuentes.upn.activa = $('cfgUPN').checked;
+    if (C.fuentes.upn.activa && !C.fuentes.upn.proxy) avisar('La Biblioteca UPN necesita la dirección del proxy para funcionar (vea el README, sección 7).', 'error');
     C.red.concurrencia = Math.max(1, Math.min(6, parseInt($('cfgConc').value, 10) || 3));
     Object.keys(C.pesos).forEach(k => { const n = parseFloat($('peso_' + k).value); C.pesos[k] = isFinite(n) && n >= 0 ? n : C.pesos[k]; });
     S.registros.forEach(r => { if (r.candidatos) { BB.Search.reevaluar(r); } });
@@ -2129,7 +2279,11 @@ BB.Excel = (() => {
     });
 
     $('btnPausa').addEventListener('click', () => { if (loteActual) { loteActual.pausado = !loteActual.pausado; mostrarProgreso(loteActual); } });
-    $('btnCancelar').addEventListener('click', () => { if (loteActual) { loteActual.cancelado = true; loteActual.pausado = false; } });
+    $('btnCancelar').addEventListener('click', () => {
+      if (!loteActual) return;
+      loteActual.cancelado = true; loteActual.pausado = false;
+      if (loteActual.repaso) loteActual.repaso.cancelado = true;
+    });
 
     $('cuerpo').addEventListener('click', accionTabla);
     $('cuerpo').addEventListener('change', e => {

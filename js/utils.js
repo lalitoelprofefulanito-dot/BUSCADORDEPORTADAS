@@ -46,7 +46,7 @@ BB.Utils = (() => {
 
   /**
    * fetch con tiempo límite, reintentos y retroceso ante 429/5xx/red.
-   * Devuelve JSON, o null si HTTP 404. Lanza Error con .code en otros casos.
+   * Devuelve JSON (o texto si opciones.texto), o null si HTTP 404. Lanza Error con .code en otros casos.
    */
   async function fetchJSON(url, opciones = {}) {
     const cfg = Object.assign({}, BB.CONFIG.red, opciones);
@@ -63,7 +63,7 @@ BB.Utils = (() => {
           e.code = r.status === 429 ? 'LIMITE' : 'HTTP'; e.reintentar = true; throw e;
         }
         if (!r.ok) { const e = new Error(`La fuente rechazó la consulta (HTTP ${r.status})`); e.code = 'HTTP'; throw e; }
-        return await r.json();
+        return cfg.texto ? await r.text() : await r.json();
       } catch (err) {
         clearTimeout(t);
         let e = err;
@@ -86,5 +86,7 @@ BB.Utils = (() => {
     setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1500);
   }
 
-  return { limpio, normalizarTexto, tokens, extraerAnio, esperar, esc, uid, fechaISO, fechaLegible, fetchJSON, descargar };
+  const fetchTexto = (url, opciones = {}) => fetchJSON(url, Object.assign({}, opciones, { texto: true }));
+
+  return { limpio, normalizarTexto, tokens, extraerAnio, esperar, esc, uid, fechaISO, fechaLegible, fetchJSON, fetchTexto, descargar };
 })();

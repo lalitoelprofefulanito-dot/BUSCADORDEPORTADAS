@@ -16,16 +16,28 @@ BB.CONFIG = {
     margenAmbiguedad: 6,   // diferencia de puntos que vuelve ambiguas dos ediciones
     tituloObra: 0.75,      // similitud de título para considerar la misma obra
     autorObra: 0.6,        // similitud de autor para considerar la misma obra
-    editorialEdicion: 0.75 // similitud de editorial para considerar la misma edición
+    editorialEdicion: 0.75, // similitud de editorial para considerar la misma edición
+    tituloSoloPalabras: 3,  // búsqueda solo por título: palabras significativas mínimas para aspirar a PROBABLE
+    tituloSoloSimilitud: 0.95 // búsqueda solo por título: similitud mínima del título para aspirar a PROBABLE
+  },
+
+  // Procedencia esperada del acervo (Biblioteca Viva: ediciones mexicanas y de la SEP).
+  // Si no se aporta ISBN, un resultado con ISBN de otro país baja de confianza; la autoedición va a revisión.
+  procedencia: {
+    prefijosISBN: ['978607', '978968', '978970'], // México; deje la lista vacía para desactivar
+    factorFueraDeRegion: 0.85,
+    autoedicion: 'independently published|createspace|autoedici|self[ -]?published'
   },
 
   // Control de red para procesamiento masivo
-  red: { concurrencia: 3, pausaMs: 300, timeoutMs: 12000, reintentos: 2, backoffMs: 1500 },
+  red: { concurrencia: 3, pausaMs: 300, timeoutMs: 12000, reintentos: 2, backoffMs: 1500, segundaPasada: true },
 
   // Fuentes bibliográficas
   fuentes: {
     openLibrary: { activa: true, maxObras: 3, maxEdicionesPorObra: 40 },
-    googleBooks: { activa: true, maxResultados: 20, apiKey: '' } // clave opcional, solo en memoria
+    googleBooks: { activa: true, maxResultados: 20, apiKey: '' }, // clave opcional, solo en memoria
+    // Biblioteca UPN «Gregorio Torres Quintero» (Koha). No permite CORS: requiere el proxy de proxy/upn-proxy-worker.js
+    upn: { activa: false, proxy: '', maxRegistros: 5 }
   },
 
   // Portadas

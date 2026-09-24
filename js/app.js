@@ -42,6 +42,24 @@
     $('btnPausa').textContent = lote.pausado ? 'Reanudar' : 'Pausar';
   }
 
+  /**
+   * Los registros que no pudieron consultar alguna fuente por límite de solicitudes (HTTP 429)
+   * se vuelven a procesar una vez, cuando termina la pausa de esa fuente.
+   */
+  async function segundaPasada(lote, registros) {
+    if (lote.cancelado || !BB.CONFIG.red.segundaPasada) return;
+    const pendientes = registros.filter(r => (r.errores || []).some(e => e.code === 'LIMITE'));
+    if (!pendientes.length) return;
+    for (let ms = BB.Search.esperaPendienteMs(); ms > 0 && !lote.cancelado; ms = BB.Search.esperaPendienteMs()) {
+      $('txtProgreso').textContent = `Una fuente pidió pausa: ${pendientes.length} registro(s) se consultarán de nuevo en ${Math.ceil(ms / 1000)} s`;
+      await U.esperar(Math.min(ms, 1000));
+    }
+    if (lote.cancelado) return;
+    const repaso = BB.Search.crearLote(pendientes, l => { $('txtProgreso').textContent = `Segunda pasada: ${l.hechos} de ${l.total}`; R.programarRender(); });
+    lote.repaso = repaso;
+    await repaso.promesa;
+  }
+
   async function procesar(registros) {
     if (!BB.Fuentes.activas().length) { avisar('Active al menos una fuente en Configuración.', 'error'); return; }
     if (loteActual && !loteActual.cancelado && loteActual.hechos < loteActual.total) {
@@ -54,6 +72,7 @@
     mostrarProgreso(lote);
     $('panelLote').classList.add('ocupado');
     await lote.promesa;
+    await segundaPasada(lote, registros);
     if (lote.cancelado) registros.filter(r => r.estado === E.PROCESANDO).forEach(r => { r.estado = E.PENDIENTE; });
     $('panelLote').classList.remove('ocupado');
     R.render();
@@ -201,6 +220,13 @@
       await BB.Search.verificarPortadas(reg, 0);
       R.render();
     } else if (accion === 'confirmar') {
+      if (reg.estadoAuto !== E.CONFIRMADO) {
+        const sel = R.seleccionado(reg), dif = sel ? BB.Matcher.discrepancias(reg.req, sel) : [];
+        const aviso = `El resultado automático es «${reg.estadoAuto}»: ${reg.motivo || ''}` +
+          (dif.length ? `\n\n• ${dif.join('\n• ')}` : '') +
+          '\n\n¿Confirma que este resultado corresponde al libro buscado?';
+        if (!confirm(aviso)) return;
+      }
       reg.validadoManual = U.fechaISO(); reg.marcadoNoEncontrado = false; reg.seleccionManual = true;
       BB.Search.reevaluar(reg); R.render(); avisar(`Registro n.º ${reg.num} confirmado manualmente.`);
     } else if (accion === 'deshacer') {
@@ -238,6 +264,8 @@
     const C = BB.CONFIG;
     $('cfgOL').checked = C.fuentes.openLibrary.activa;
     $('cfgGB').checked = C.fuentes.googleBooks.activa;
+    $('cfgUPN').checked = C.fuentes.upn.activa;
+    $('cfgUPNProxy').value = C.fuentes.upn.proxy;
     $('cfgConc').value = C.red.concurrencia;
     Object.entries(C.pesos).forEach(([k, v]) => { $('peso_' + k).value = v; });
     pintarFuentes();
@@ -247,6 +275,9 @@
     C.fuentes.openLibrary.activa = $('cfgOL').checked;
     C.fuentes.googleBooks.activa = $('cfgGB').checked;
     C.fuentes.googleBooks.apiKey = $('cfgKey').value.trim();
+    C.fuentes.upn.proxy = $('cfgUPNProxy').value.trim();
+    C.fuentes.upn.activa = $('cfgUPN').checked;
+    if (C.fuentes.upn.activa && !C.fuentes.upn.proxy) avisar('La Biblioteca UPN necesita la dirección del proxy para funcionar (vea el README, sección 7).', 'error');
     C.red.concurrencia = Math.max(1, Math.min(6, parseInt($('cfgConc').value, 10) || 3));
     Object.keys(C.pesos).forEach(k => { const n = parseFloat($('peso_' + k).value); C.pesos[k] = isFinite(n) && n >= 0 ? n : C.pesos[k]; });
     S.registros.forEach(r => { if (r.candidatos) { BB.Search.reevaluar(r); } });
@@ -297,7 +328,11 @@
     });
 
     $('btnPausa').addEventListener('click', () => { if (loteActual) { loteActual.pausado = !loteActual.pausado; mostrarProgreso(loteActual); } });
-    $('btnCancelar').addEventListener('click', () => { if (loteActual) { loteActual.cancelado = true; loteActual.pausado = false; } });
+    $('btnCancelar').addEventListener('click', () => {
+      if (!loteActual) return;
+      loteActual.cancelado = true; loteActual.pausado = false;
+      if (loteActual.repaso) loteActual.repaso.cancelado = true;
+    });
 
     $('cuerpo').addEventListener('click', accionTabla);
     $('cuerpo').addEventListener('change', e => {

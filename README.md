@@ -1,6 +1,6 @@
-# Buscador Bibliográfico y de Portadas — versión 1.0
+# Buscador Bibliográfico y de Portadas — versión 1.1
 
-Aplicación web (HTML, CSS y JavaScript sin frameworks) que identifica libros por **ISBN-10, ISBN-13 o título**, contrasta autor, editorial y año, localiza metadatos y portadas en **Open Library** y **Google Books**, calcula un porcentaje de coincidencia, permite validación manual y exporta un **XLSX real con las portadas insertadas**.
+Aplicación web (HTML, CSS y JavaScript sin frameworks) que identifica libros por **ISBN-10, ISBN-13 o título**, contrasta autor, editorial y año, localiza metadatos y portadas en **Open Library**, **Google Books** y, con un proxy propio, la **Biblioteca UPN**, calcula un porcentaje de coincidencia, permite validación manual y exporta un **XLSX real con las portadas insertadas**.
 
 ## 1. Arquitectura
 
@@ -10,6 +10,7 @@ buscador-bibliografico/
 ├── buscador-bibliografico.html Versión de un solo archivo (generada por construir.py)
 ├── construir.py                Une los módulos en un único HTML
 ├── css/styles.css              Estilos (responsive, modo oscuro, foco visible)
+├── proxy/upn-proxy-worker.js   Proxy mínimo (Cloudflare Worker) para consultar la Biblioteca UPN
 └── js/
     ├── config.js               Pesos, umbrales, red, fuentes (configuración central)
     ├── utils.js                normalizarTexto(), fetch con reintentos, escape HTML
@@ -18,6 +19,7 @@ buscador-bibliografico/
     │   ├── registry.js         Registro de adaptadores + modelo OBRA / EDICIÓN
     │   ├── openlibrary.js      Adaptador Open Library
     │   ├── googlebooks.js      Adaptador Google Books
+    │   ├── upn.js              Adaptador Biblioteca UPN (Koha, vía proxy)
     │   └── _plantilla-fuente.js Plantilla para nuevas fuentes (no se carga)
     ├── matcher.js              Motor de coincidencia y clasificación
     ├── covers.js               obtenerPortada(): verificación, tamaño grande, base64 para Excel
@@ -102,10 +104,17 @@ Clasificación:
 | Estado | Regla principal |
 |---|---|
 | CONFIRMADO | ISBN exacto con datos concordantes; o, sin ISBN, título, autor, editorial y año concordantes y confianza ≥ 85 % |
-| COINCIDENCIA PROBABLE | La obra coincide y la confianza es ≥ 60 %, pero falta confirmar la edición |
+| COINCIDENCIA PROBABLE | La obra coincide y la confianza es ≥ 60 %, pero falta confirmar la edición. Si solo se dio el título, exige al menos 3 palabras significativas y un título prácticamente idéntico |
 | EDICIÓN DIFERENTE | La obra coincide, pero el ISBN, la editorial o el año solicitados no aparecen |
-| REVISIÓN MANUAL | Varias ediciones plausibles con puntuación similar, o ISBN que coincide con un título muy distinto |
+| REVISIÓN MANUAL | Varias ediciones plausibles con puntuación similar; ISBN que coincide con un título muy distinto; búsqueda solo por un título breve o incompleto; o mejor resultado de autoedición |
 | NO ENCONTRADO | Sin resultados o sin coincidencia mínima (35 %) |
+
+### Reglas que evitan confundir obras (versión 1.1)
+
+- **Título contenido en otro.** La contención de palabras se pondera por la proporción de título que cubre: «Agua» ya no coincide con «Como agua para chocolate», ni «Materiales» con «Estática y resistencia de materiales».
+- **Solo título.** Sin autor, editorial ni año, un título breve (menos de 3 palabras significativas) o que no coincide completo va a REVISIÓN MANUAL. Para los libros del acervo conviene importar el Excel con las columnas Autor, Editorial y Año: así el motor descarta obras homónimas («Batman» de Alan Moore frente al de Publicaciones Citem).
+- **Procedencia.** Cuando no se aporta ISBN, un resultado con ISBN de otro país pierde 15 % de confianza (prefijos de México en `BB.CONFIG.procedencia.prefijosISBN`; lista vacía para desactivar). Un resultado de autoedición («Independently Published», CreateSpace) va a REVISIÓN MANUAL.
+- **Validación manual.** Confirmar a mano un resultado que el motor no dio por CONFIRMADO pide primero aceptar un aviso con el motivo y las discrepancias. Si el resultado es EDICIÓN DIFERENTE, al validarlo conserva ese estado: se confirma la obra, no la edición.
 
 ## 6. Estructura del XLSX generado
 
@@ -126,7 +135,19 @@ Nota sobre imágenes: para incrustar una portada, el navegador debe poder descar
 
 No hay que tocar la interfaz, el motor ni la exportación: la caché, la cola, la puntuación y el Excel funcionan con cualquier adaptador.
 
-Para catálogos sin API pública abierta (SEP, Libros del Rincón, Biblioteca de México, Biblioteca Nacional, WorldCat, Library of Congress), o que requieran credenciales, la consulta debe hacerse a través de un **backend o proxy propio** que guarde las claves y resuelva CORS; el adaptador solo llama a ese proxy. Library of Congress ofrece una API JSON pública (`loc.gov/books/?fo=json`) que puede ser el siguiente adaptador. WorldCat requiere credenciales de OCLC.
+### Biblioteca UPN «Gregorio Torres Quintero»
+
+Su catálogo (Koha, `sibi.upn.mx`) tiene muchas ediciones de la SEP y de Libros del Rincón que no están en Open Library ni en Google Books. Se consulta por ISBN (primero el ISBN-10, que es como guarda las ediciones anteriores a 2007) y por título; cada ficha se lee en formato MARCXML (020 ISBN, 100/110/700 autores, 245 título, 260/264 editorial y año). El servidor no permite consultas directas desde el navegador (no envía encabezado CORS), por eso se usa un proxy que solo reenvía consultas de lectura a ese catálogo:
+
+1. Cree una cuenta gratuita en <https://dash.cloudflare.com> y entre a **Workers & Pages**.
+2. Pulse **Create** → **Create Worker**, póngale un nombre (por ejemplo `upn-proxy`) y pulse **Deploy**.
+3. Pulse **Edit code**, borre el contenido del editor, pegue el de `proxy/upn-proxy-worker.js` y pulse **Deploy**.
+4. Copie la dirección que muestra Cloudflare (termina en `.workers.dev`).
+5. En la aplicación abra **Configuración**, marque **Biblioteca UPN**, pegue la dirección en **Dirección del proxy** y pulse **Aplicar y recalcular**.
+
+El proxy rechaza cualquier dirección que no sea una búsqueda, ficha o exportación del OPAC de la UPN, y no guarda datos. Sin proxy, la fuente queda inactiva y la aplicación funciona con las demás.
+
+Para otros catálogos sin API pública abierta (SEP, Libros del Rincón, Biblioteca de México, Biblioteca Nacional, WorldCat, Library of Congress), o que requieran credenciales, la consulta debe hacerse a través de un **backend o proxy propio** que guarde las claves y resuelva CORS; el adaptador solo llama a ese proxy. Library of Congress ofrece una API JSON pública (`loc.gov/books/?fo=json`) que puede ser el siguiente adaptador. WorldCat requiere credenciales de OCLC.
 
 ## 8. Robustez
 
@@ -135,7 +156,7 @@ Para catálogos sin API pública abierta (SEP, Libros del Rincón, Biblioteca de
 | ISBN inválido | Se explica el error (dígito de control o longitud). Si hay título, se busca por título |
 | ISBN no encontrado | Se busca por título si existe; si no, NO ENCONTRADO con motivo |
 | API sin respuesta | Tiempo límite de 12 s y 2 reintentos con espera creciente; la fila ofrece «Reintentar» |
-| Límite de solicitudes (429) | La fuente se pausa 60 s para no agravar el bloqueo; las demás siguen |
+| Límite de solicitudes (429) | La fuente se pausa 60 s para no agravar el bloqueo; las demás siguen. Al terminar el lote, los registros afectados se consultan de nuevo automáticamente cuando acaba la pausa (segunda pasada; `BB.CONFIG.red.segundaPasada`) |
 | Sin portada o imagen inaccesible | Se verifica la imagen; si falla se indica, y se usa otra portada solo si es de la misma edición (mismo ISBN-13) |
 | Varias ediciones | REVISIÓN MANUAL con la lista de candidatos para elegir |
 | Datos incompletos | Se usan solo los campos aportados; lo que falta en la fuente se anota |

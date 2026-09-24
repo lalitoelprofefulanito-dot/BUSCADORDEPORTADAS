@@ -31,7 +31,10 @@ BB.Matcher = (() => {
     const sa = new Set(ta), sb = new Set(tb);
     let inter = 0; sa.forEach(t => { if (sb.has(t)) inter++; });
     const dice = (2 * inter) / (sa.size + sb.size);
-    const contencion = inter / Math.min(sa.size, sb.size);
+    // La contención vale según cuánto del texto largo cubre el corto:
+    // «Agua» dentro de «Como agua para chocolate» ya no cuenta como coincidencia fuerte.
+    const cobertura = Math.sqrt(Math.min(sa.size, sb.size) / Math.max(sa.size, sb.size));
+    const contencion = (inter / Math.min(sa.size, sb.size)) * cobertura;
     return Math.min(1, Math.max(dice, contencion * 0.9, diceBigramas(na, nb) * 0.95));
   }
 
@@ -87,7 +90,14 @@ BB.Matcher = (() => {
     if (req.anio) det.anio = simAnio(req.anio, cand.edicion.anio);
     let num = 0, den = 0;
     Object.keys(det).forEach(k => { num += (P[k] || 0) * det[k]; den += (P[k] || 0); });
-    return { score: den ? Math.round((num / den) * 100) : 0, det };
+    let score = den ? (num / den) * 100 : 0;
+    // Procedencia: señales que no son campos ponderados, sino alertas sobre la edición encontrada.
+    const Pr = BB.CONFIG.procedencia, alertas = {};
+    if (!req.isbn && Pr.prefijosISBN.length && cand.edicion.isbn13 && !Pr.prefijosISBN.some(x => cand.edicion.isbn13.startsWith(x))) {
+      alertas.fueraRegion = true; score *= Pr.factorFueraDeRegion;
+    }
+    if (Pr.autoedicion && new RegExp(Pr.autoedicion, 'i').test(cand.edicion.editorial)) alertas.autoedicion = true;
+    return { score: Math.round(score), det, alertas };
   }
 
   /** Lista explícita de discrepancias: nunca se ocultan diferencias de ISBN, editorial o año. */
@@ -104,6 +114,10 @@ BB.Matcher = (() => {
       obs.push(ed.editorial ? `Editorial distinta: solicitada «${req.editorial}», encontrada «${ed.editorial}»` : 'La fuente no informa editorial');
     }
     if ('anio' in d && d.anio < 1) obs.push(ed.anio ? `Año distinto: solicitado ${req.anio}, encontrado ${ed.anio}` : 'La fuente no informa año de publicación');
+    const al = (cand.ev && cand.ev.alertas) || {};
+    if (al.fueraRegion) obs.push(`Edición de otro país (ISBN ${ed.isbn13}); se esperaba una edición mexicana`);
+    if (al.autoedicion) obs.push(`Autoedición («${ed.editorial}»): casi nunca corresponde a un libro escolar`);
+    if (!req.isbn && !req.autor && !req.editorial && !req.anio) obs.push('Solo se buscó por título: sin autor, editorial ni año no se puede distinguir entre obras con títulos parecidos');
     return obs;
   }
 
@@ -137,6 +151,15 @@ BB.Matcher = (() => {
 
     if (!req.titulo) return { estado: E.NO_ENCONTRADO, motivo: 'Datos insuficientes: falta ISBN válido o título' };
     if ((d.titulo || 0) < 0.5 || s < T.minimo) return { estado: E.NO_ENCONTRADO, motivo: 'Ningún resultado alcanza la coincidencia mínima' };
+    if (best.ev.alertas && best.ev.alertas.autoedicion) return { estado: E.REVISION, motivo: 'El mejor resultado es una autoedición; verifique que sea el mismo libro' };
+
+    if (!req.autor && !req.editorial && !req.anio) {
+      const palabras = U.tokens(req.titulo).length;
+      if (palabras < T.tituloSoloPalabras || d.titulo < T.tituloSoloSimilitud) {
+        return { estado: E.REVISION, motivo: 'Solo se dio el título y es breve o no coincide completo; agregue autor o editorial para identificar la obra' };
+      }
+      return { estado: E.PROBABLE, motivo: 'Solo se dio el título: la obra parece coincidir, pero sin autor ni editorial no se puede confirmar' };
+    }
 
     const obraOK = d.titulo >= T.tituloObra && (!req.autor || d.autor >= T.autorObra);
     const edicionDistinta = (req.editorial && d.editorial < 0.5) || (req.anio && d.anio < 0.5);
